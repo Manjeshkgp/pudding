@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { processDueAllowances } from "./allowance.job";
 import { processSavingsInterest } from "./interest.job";
 import { runPayPalReconciliation } from "./reconciliation.job";
+import { runWeeklyDigestJob } from "./weekly-digest.job";
 
 const globalForCron = globalThis as unknown as {
   goodspendCronInitialized?: boolean;
@@ -46,6 +47,15 @@ export function initInProcessCronJobs() {
       await runPayPalReconciliation();
     } catch (err) {
       console.error("[Cron Error - PayPal Reconciliation]:", err);
+    }
+  });
+
+  // Run weekly Parent Digest every Sunday at 08:00 UTC (FR-10.4)
+  cron.schedule("0 8 * * 0", async () => {
+    try {
+      await runWeeklyDigestJob();
+    } catch (err) {
+      console.error("[Cron Error - Weekly Digest]:", err);
     }
   });
 }

@@ -101,13 +101,34 @@ export async function POST(
       idempotencyKey,
     });
 
-    const updatedRequest = await prisma.spendingRequest.update({
-      where: { id: spendingRequest.id },
-      data: {
-        status: "APPROVED",
-        paypalOrderId: paypalOrder.id,
-        reviewedByUserId: user.id,
-      },
+    const updatedRequest = await prisma.$transaction(async (tx) => {
+      const lockedRows = await tx.$queryRaw<
+        Array<{ id: string; status: string }>
+      >`SELECT "id", "status" FROM "SpendingRequest" WHERE "id" = ${spendingRequest.id} FOR UPDATE`;
+      const currentReq = lockedRows[0];
+
+      if (
+        !currentReq ||
+        (currentReq.status !== "PENDING_APPROVAL" &&
+          currentReq.status !== "APPROVED" &&
+          currentReq.status !== "PAYMENT_FAILED")
+      ) {
+        throw new ApiError(
+          409,
+          `Cannot persist PayPal order for request in status: ${currentReq?.status ?? spendingRequest.status}`,
+          "INVALID_REQUEST_STATUS"
+        );
+      }
+
+      return tx.spendingRequest.update({
+        where: { id: spendingRequest.id },
+        data: {
+          status: "APPROVED",
+          paypalOrderId: paypalOrder.id,
+          paypalCaptureId: null,
+          reviewedByUserId: user.id,
+        },
+      });
     });
 
     const approveLink =

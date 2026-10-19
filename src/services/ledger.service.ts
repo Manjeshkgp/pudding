@@ -613,11 +613,67 @@ export interface DebitChildBucketParams {
   actorChildId?: string;
   description: string;
   metadata?: Record<string, unknown>;
+  tx?: Prisma.TransactionClient;
+}
+
+/**
+ * Computes the authoritative net debit state (`totalDebited - totalRestored`) for a `SpendingRequest`
+ * inside a `FOR UPDATE` transaction, and returns a cycle-scoped idempotency key
+ * (`spend-option-a-debit:${spendingRequestId}:cycle-${reversalCount}`) so that:
+ * - Concurrent calls within the same active cycle deduplicate against the same key.
+ * - Retries after a confirmed release/reversal (`reversalCount` incremented, `netDebited === 0`)
+ *   get a fresh cycle key and properly re-reserve the child's funds.
+ */
+export async function getSpendingRequestNetDebitState(
+  tx: Prisma.TransactionClient,
+  spendingRequestId: string
+) {
+  const [debitAgg, reversalAgg] = await Promise.all([
+    tx.ledgerEntry.aggregate({
+      where: {
+        referenceId: spendingRequestId,
+        type: "SPEND_OPTION_A_PAYPAL",
+        direction: "DEBIT",
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+    tx.ledgerEntry.aggregate({
+      where: {
+        referenceId: spendingRequestId,
+        type: "REVERSAL",
+        direction: "CREDIT",
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const totalDebited = debitAgg._sum.amount ?? new Prisma.Decimal(0);
+  const totalRestored = reversalAgg._sum.amount ?? new Prisma.Decimal(0);
+  const netDebited = Prisma.Decimal.max(
+    new Prisma.Decimal(0),
+    totalDebited.minus(totalRestored)
+  );
+  const debitCount = debitAgg._count._all;
+  const reversalCount = reversalAgg._count._all;
+
+  return {
+    totalDebited,
+    totalRestored,
+    netDebited,
+    debitCount,
+    reversalCount,
+    activeCycleIdempotencyKey: `spend-option-a-debit:${spendingRequestId}:cycle-${reversalCount}`,
+    activeCycleReleaseKey: `spend-option-a-preflight-release:${spendingRequestId}:cycle-${reversalCount}`,
+  };
 }
 
 /**
  * Atomically debits a child's bucket (e.g., for Spend Option A, Spend Option B, Goal Deposit, or Donation).
  * If lockAsPendingClaim is true (PayPal UNCLAIMED/PENDING), moves the amount into lockedPendingBalance.
+ * Supports participating in a caller-provided interactive transaction (`params.tx`) so request locks
+ * and wallet debits execute in a single atomic transaction.
  */
 export async function debitChildBucket(params: DebitChildBucketParams) {
   const amount = new Prisma.Decimal(params.amount).toDecimalPlaces(2);
@@ -625,17 +681,17 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
     throw new ApiError(400, "Debit amount must be greater than 0");
   }
 
-  const existing = await prisma.ledgerEntry.findUnique({
-    where: { idempotencyKey: params.idempotencyKey },
-  });
-  if (existing) {
-    const wallet = await prisma.wallet.findUniqueOrThrow({
-      where: { childId: params.childId },
+  const executeDebit = async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.ledgerEntry.findUnique({
+      where: { idempotencyKey: params.idempotencyKey },
     });
-    return { wallet, ledgerEntry: existing, idempotentReplay: true };
-  }
+    if (existing) {
+      const wallet = await tx.wallet.findUniqueOrThrow({
+        where: { childId: params.childId },
+      });
+      return { wallet, ledgerEntry: existing, idempotentReplay: true };
+    }
 
-  return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<
       Array<{
         id: string;
@@ -715,5 +771,11 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
       ledgerEntry,
       idempotentReplay: false,
     };
-  });
+  };
+
+  if (params.tx) {
+    return executeDebit(params.tx);
+  }
+
+  return prisma.$transaction(executeDebit);
 }

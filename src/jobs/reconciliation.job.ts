@@ -56,7 +56,10 @@ export async function runPayPalReconciliation(): Promise<ReconciliationSummary> 
     try {
       const orderDetails = await getPayPalOrderDetails(reqItem.paypalOrderId);
       const unit = orderDetails.purchase_units?.[0];
-      const capture = unit?.payments?.captures?.[0];
+      const captures = unit?.payments?.captures || [];
+      const capture = reqItem.paypalCaptureId
+        ? captures.find((c) => c.id === reqItem.paypalCaptureId) || captures[0]
+        : captures[0];
       const paypalCaptureStatus = capture?.status || orderDetails.status;
       const paypalAmountStr =
         capture?.amount?.value || unit?.amount?.value || null;
@@ -84,33 +87,52 @@ export async function runPayPalReconciliation(): Promise<ReconciliationSummary> 
         reqItem.status === "PAID_PENDING_CLAIM" &&
         paypalCaptureStatus === "COMPLETED"
       ) {
-        await prisma.$transaction(async (tx) => {
+        const didAutoResolve = await prisma.$transaction(async (tx) => {
+          const lockedReqRows = await tx.$queryRaw<
+            Array<{ id: string; status: string }>
+          >`SELECT "id", "status" FROM "SpendingRequest" WHERE "id" = ${reqItem.id} FOR UPDATE`;
+          const currentReq = lockedReqRows[0];
+
+          // Only transition if the request is STILL in PAID_PENDING_CLAIM
+          // (protects against concurrent COMPLETED or REVERSED/REFUNDED webhooks)
+          if (!currentReq || currentReq.status !== "PAID_PENDING_CLAIM") {
+            return false;
+          }
+
           if (reqItem.child.wallet) {
-            const dec = Prisma.Decimal.min(
-              reqItem.child.wallet.lockedPendingBalance,
-              reqItem.amount
-            );
-            await tx.wallet.update({
-              where: { id: reqItem.child.wallet.id },
-              data: { lockedPendingBalance: { decrement: dec } },
-            });
+            const lockedWalletRows = await tx.$queryRaw<
+              Array<{ id: string; lockedPendingBalance: Prisma.Decimal }>
+            >`SELECT "id", "lockedPendingBalance" FROM "Wallet" WHERE "id" = ${reqItem.child.wallet.id} FOR UPDATE`;
+            const lockedWallet = lockedWalletRows[0];
+            const currentLocked = lockedWallet
+              ? new Prisma.Decimal(lockedWallet.lockedPendingBalance)
+              : new Prisma.Decimal(0);
+            const dec = Prisma.Decimal.min(currentLocked, reqItem.amount);
+
+            if (dec.gt(0)) {
+              await tx.wallet.update({
+                where: { id: reqItem.child.wallet.id },
+                data: { lockedPendingBalance: { decrement: dec } },
+              });
+            }
           }
 
           await tx.spendingRequest.update({
             where: { id: reqItem.id },
-            data: { status: "PAID_COMPLETED" },
+            data: {
+              status: "PAID_COMPLETED",
+              ...(capture?.id ? { paypalCaptureId: capture.id } : {}),
+            },
           });
 
-          await tx.ledgerEntry.updateMany({
-            where: {
-              referenceId: reqItem.id,
-              type: "SPEND_OPTION_A_PAYPAL",
-            },
-            data: { status: "COMPLETED" },
-          });
+          return true;
         });
 
-        summary.autoResolvedCount += 1;
+        if (didAutoResolve) {
+          summary.autoResolvedCount += 1;
+        } else {
+          summary.matchedCount += 1;
+        }
         continue;
       }
 

@@ -84,20 +84,40 @@ export async function PATCH(
     const input = await validateBody(req, childCounterResponseSchema);
 
     if (input.action === "CANCEL_REQUEST") {
-      if (
-        spendingRequest.status !== "PENDING_APPROVAL" &&
-        spendingRequest.status !== "COUNTER_OFFERED"
-      ) {
-        throw new ApiError(
-          409,
-          `Cannot cancel request in status ${spendingRequest.status}`,
-          "INVALID_STATUS"
-        );
-      }
+      const cancelled = await prisma.$transaction(async (tx) => {
+        const lockedRows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            paypalOrderId: string | null;
+          }>
+        >`SELECT "id", "status", "paypalOrderId" FROM "SpendingRequest" WHERE "id" = ${spendingRequest.id} FOR UPDATE`;
+        const currentReq = lockedRows[0];
 
-      const cancelled = await prisma.spendingRequest.update({
-        where: { id: spendingRequest.id },
-        data: { status: "CANCELLED" },
+        if (
+          !currentReq ||
+          (currentReq.status !== "PENDING_APPROVAL" &&
+            currentReq.status !== "COUNTER_OFFERED")
+        ) {
+          throw new ApiError(
+            409,
+            `Cannot cancel request in status ${currentReq?.status ?? spendingRequest.status}`,
+            "INVALID_STATUS"
+          );
+        }
+
+        if (currentReq.paypalOrderId) {
+          throw new ApiError(
+            409,
+            "Cannot cancel a spending request while a PayPal checkout order is already in progress",
+            "PAYPAL_ORDER_IN_PROGRESS"
+          );
+        }
+
+        return tx.spendingRequest.update({
+          where: { id: spendingRequest.id },
+          data: { status: "CANCELLED" },
+        });
       });
 
       await writeAuditLog({

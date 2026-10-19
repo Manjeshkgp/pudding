@@ -151,6 +151,12 @@ enum NotificationChannel {
   SMS
 }
 
+enum PushPlatform {
+  WEB_VAPID
+  MOBILE_FCM
+  MOBILE_APNS
+}
+
 enum SupportTicketStatus {
   OPEN
   IN_PROGRESS
@@ -242,6 +248,7 @@ model User {
   notifications          Notification[]
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
+  securityQuestions      UserSecurityQuestion[]
   supportTickets         SupportTicket[]
   disputes               Dispute[]
   verificationTokens     VerificationToken[]
@@ -652,17 +659,40 @@ model Notification {
 }
 
 model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String?
-  childId   String?
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  userAgent String?
-  createdAt DateTime @default(now())
+  id          String       @id @default(cuid())
+  userId      String?
+  childId     String?
+  platform    PushPlatform @default(WEB_VAPID)
+  endpoint    String       @unique
+  p256dh      String?
+  auth        String?
+  deviceToken String?
+  deviceName  String?
+  userAgent   String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @default(now()) @updatedAt
 
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  child     Child?   @relation(fields: [childId], references: [id], onDelete: Cascade)
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  child       Child?       @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@index([userId, platform, isActive])
+  @@index([childId, platform, isActive])
+}
+
+model UserSecurityQuestion {
+  id           String   @id @default(cuid())
+  userId       String
+  questionKey  String
+  questionText String
+  answerHash   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionKey])
+  @@index([userId])
 }
 
 model NotificationPreference {

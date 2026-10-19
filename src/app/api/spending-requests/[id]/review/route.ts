@@ -86,13 +86,45 @@ export async function POST(
 
     // 1. REJECT
     if (input.decision === "REJECT") {
-      const rejected = await prisma.spendingRequest.update({
-        where: { id: spendingRequest.id },
-        data: {
-          status: "REJECTED",
-          parentComment: input.parentComment ?? null,
-          reviewedByUserId: user.id,
-        },
+      const rejected = await prisma.$transaction(async (tx) => {
+        const lockedRows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            paypalOrderId: string | null;
+          }>
+        >`SELECT "id", "status", "paypalOrderId" FROM "SpendingRequest" WHERE "id" = ${spendingRequest.id} FOR UPDATE`;
+        const currentReq = lockedRows[0];
+
+        if (
+          !currentReq ||
+          (currentReq.status !== "PENDING_APPROVAL" &&
+            currentReq.status !== "COUNTER_OFFERED" &&
+            currentReq.status !== "APPROVED")
+        ) {
+          throw new ApiError(
+            409,
+            `Spending request cannot be rejected in status: ${currentReq?.status ?? spendingRequest.status}`,
+            "REQUEST_ALREADY_FINALIZED"
+          );
+        }
+
+        if (currentReq.paypalOrderId) {
+          throw new ApiError(
+            409,
+            "Cannot reject a spending request while a PayPal checkout order is already in progress",
+            "PAYPAL_ORDER_IN_PROGRESS"
+          );
+        }
+
+        return tx.spendingRequest.update({
+          where: { id: spendingRequest.id },
+          data: {
+            status: "REJECTED",
+            parentComment: input.parentComment ?? null,
+            reviewedByUserId: user.id,
+          },
+        });
       });
 
       await prisma.notification.create({
@@ -142,14 +174,46 @@ export async function POST(
         input.counterOfferAmount
       ).toDecimalPlaces(2);
 
-      const countered = await prisma.spendingRequest.update({
-        where: { id: spendingRequest.id },
-        data: {
-          status: "COUNTER_OFFERED",
-          counterOfferAmount: counterDecimal,
-          parentComment: input.parentComment ?? null,
-          reviewedByUserId: user.id,
-        },
+      const countered = await prisma.$transaction(async (tx) => {
+        const lockedRows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            paypalOrderId: string | null;
+          }>
+        >`SELECT "id", "status", "paypalOrderId" FROM "SpendingRequest" WHERE "id" = ${spendingRequest.id} FOR UPDATE`;
+        const currentReq = lockedRows[0];
+
+        if (
+          !currentReq ||
+          (currentReq.status !== "PENDING_APPROVAL" &&
+            currentReq.status !== "COUNTER_OFFERED" &&
+            currentReq.status !== "APPROVED")
+        ) {
+          throw new ApiError(
+            409,
+            `Spending request cannot be counter-offered in status: ${currentReq?.status ?? spendingRequest.status}`,
+            "REQUEST_ALREADY_FINALIZED"
+          );
+        }
+
+        if (currentReq.paypalOrderId) {
+          throw new ApiError(
+            409,
+            "Cannot counter-offer a spending request while a PayPal checkout order is already in progress",
+            "PAYPAL_ORDER_IN_PROGRESS"
+          );
+        }
+
+        return tx.spendingRequest.update({
+          where: { id: spendingRequest.id },
+          data: {
+            status: "COUNTER_OFFERED",
+            counterOfferAmount: counterDecimal,
+            parentComment: input.parentComment ?? null,
+            reviewedByUserId: user.id,
+          },
+        });
       });
 
       await prisma.notification.create({
