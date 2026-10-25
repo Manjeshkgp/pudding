@@ -285,6 +285,7 @@ model Child {
   id                   String    @id @default(cuid())
   familyId             String
   name                 String
+  username             String    @unique
   age                  Int
   avatar               String    @default("default-kid")
   theme                String    @default("ocean")

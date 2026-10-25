@@ -120,6 +120,7 @@ export async function GET(req: NextRequest) {
       child: {
         id: child.id,
         name: child.name,
+        username: child.username,
         age: child.age,
         avatar: child.avatar,
         theme: child.theme,

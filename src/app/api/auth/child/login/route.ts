@@ -11,80 +11,19 @@ import {
 import { setSessionCookie, signSessionToken } from "@/lib/jwt";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { childPinSchema, childUsernameSchema } from "@/lib/child-credentials";
 
 const MAX_FAILED_PIN_ATTEMPTS = 5;
-const PIN_LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes (NFR-3)
+const PIN_LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
-const childLoginSchema = z
-  .object({
-    familyCode: z
-      .string()
-      .trim()
-      .min(4, "Family code is required")
-      .max(12)
-      .transform((val) => val.toUpperCase()),
-    childId: z.string().trim().optional(),
-    childName: z.string().trim().optional(),
-    pin: z.string().regex(/^[0-9]{4,6}$/, "PIN must be 4 to 6 digits"),
-  })
-  .refine((data) => Boolean(data.childId || data.childName), {
-    message: "Either childId or childName must be provided",
-    path: ["childId"],
-  });
-
-/**
- * GET /api/auth/child/login?familyCode=XXXXXX
- * Public helper for the Kid Login screen: given a valid 6-char familyCode,
- * returns the list of kid avatars and first names so the child can tap their avatar and enter their PIN (FR-1.5).
- */
-export async function GET(req: NextRequest) {
-  try {
-    const { ipAddress } = getRequestMeta(req);
-    enforceRateLimit({
-      key: `family-lookup:${ipAddress}`,
-      limit: 20,
-      windowMs: 5 * 60 * 1000,
-    });
-
-    const rawCode = req.nextUrl.searchParams.get("familyCode");
-    if (!rawCode) {
-      throw new ApiError(400, "familyCode query parameter is required");
-    }
-
-    const family = await prisma.family.findUnique({
-      where: { familyCode: rawCode.trim().toUpperCase() },
-      include: {
-        children: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true,
-            theme: true,
-            age: true,
-            isFrozen: true,
-          },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-    });
-
-    if (!family) {
-      throw new ApiError(404, "Family code not found", "FAMILY_NOT_FOUND");
-    }
-
-    return apiSuccess({
-      familyName: family.name,
-      familyCode: family.familyCode,
-      children: family.children,
-    });
-  } catch (error) {
-    return handleRouteError(error);
-  }
-}
+const childLoginSchema = z.object({
+  username: childUsernameSchema,
+  pin: childPinSchema,
+});
 
 /**
  * POST /api/auth/child/login
- * Authenticates a child using Family Code + Child ID/Name + PIN (never email, FR-1.5).
+ * Authenticates a child with their unique username and the 6-digit PIN set by a parent.
  * Enforces NFR-3: locks the PIN for 15 minutes after 5 failed attempts and alerts parents.
  */
 export async function POST(req: NextRequest) {
@@ -97,14 +36,29 @@ export async function POST(req: NextRequest) {
       limit: 20,
       windowMs: 15 * 60 * 1000,
     });
-
-    const family = await prisma.family.findUnique({
-      where: { familyCode: input.familyCode },
+    enforceRateLimit({
+      key: `child-login-user:${input.username}`,
+      limit: 10,
+      windowMs: 15 * 60 * 1000,
     });
 
-    if (!family) {
-      throw new ApiError(401, "Invalid family code or PIN", "INVALID_CREDENTIALS");
+    const child = await prisma.child.findUnique({
+      where: { username: input.username },
+      include: {
+        wallet: true,
+        family: true,
+      },
+    });
+
+    if (!child) {
+      throw new ApiError(
+        401,
+        "Invalid username or PIN",
+        "INVALID_CREDENTIALS"
+      );
     }
+
+    const family = child.family;
 
     if (family.isFrozen) {
       throw new ApiError(
@@ -112,22 +66,6 @@ export async function POST(req: NextRequest) {
         "Family account is currently paused.",
         "FAMILY_FROZEN"
       );
-    }
-
-    const child = await prisma.child.findFirst({
-      where: {
-        familyId: family.id,
-        ...(input.childId
-          ? { id: input.childId }
-          : { name: { equals: input.childName, mode: "insensitive" } }),
-      },
-      include: {
-        wallet: true,
-      },
-    });
-
-    if (!child) {
-      throw new ApiError(401, "Invalid family code or PIN", "INVALID_CREDENTIALS");
     }
 
     if (child.isFrozen) {
@@ -138,7 +76,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check active PIN lockout (NFR-3)
     const now = new Date();
     if (child.pinLockedUntil && child.pinLockedUntil > now) {
       const remainingSeconds = Math.ceil(
@@ -173,7 +110,6 @@ export async function POST(req: NextRequest) {
       });
 
       if (shouldLock) {
-        // Notify parents of security alert (FR-12.1, NFR-3)
         await prisma.notification.create({
           data: {
             familyId: family.id,
@@ -204,12 +140,11 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      throw new ApiError(401, "Invalid PIN", "INVALID_PIN", {
+      throw new ApiError(401, "Invalid username or PIN", "INVALID_PIN", {
         attemptsRemaining: MAX_FAILED_PIN_ATTEMPTS - nextFailedCount,
       });
     }
 
-    // Successful login: reset failed attempts
     if (child.failedPinAttempts > 0 || child.pinLockedUntil) {
       await prisma.child.update({
         where: { id: child.id },
@@ -245,6 +180,7 @@ export async function POST(req: NextRequest) {
         child: {
           id: child.id,
           name: child.name,
+          username: child.username,
           age: child.age,
           avatar: child.avatar,
           theme: child.theme,

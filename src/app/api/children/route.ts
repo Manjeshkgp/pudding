@@ -10,10 +10,12 @@ import {
 } from "@/lib/api-response";
 import { requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { childPinSchema, childUsernameSchema } from "@/lib/child-credentials";
 
 const createChildSchema = z
   .object({
     name: z.string().trim().min(1, "Child name is required").max(80),
+    username: childUsernameSchema,
     age: z
       .number()
       .int()
@@ -21,9 +23,7 @@ const createChildSchema = z
       .max(17, "Child must be 17 or younger (FR-1.5)"),
     avatar: z.string().trim().max(100).default("default-kid"),
     theme: z.string().trim().max(50).default("ocean"),
-    pin: z
-      .string()
-      .regex(/^[0-9]{4,6}$/, "Child PIN must be 4 to 6 digits (FR-1.5)"),
+    pin: childPinSchema,
     defaultSplitSpend: z.number().int().min(0).max(100).default(70),
     defaultSplitSave: z.number().int().min(0).max(100).default(20),
     defaultSplitGive: z.number().int().min(0).max(100).default(10),
@@ -87,10 +87,10 @@ export async function GET(req: NextRequest) {
     });
 
     return apiSuccess({
-      familyCode: family.familyCode,
       children: children.map((child) => ({
         id: child.id,
         name: child.name,
+        username: child.username,
         age: child.age,
         avatar: child.avatar,
         theme: child.theme,
@@ -137,6 +137,14 @@ export async function POST(req: NextRequest) {
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, createChildSchema);
 
+    if (!user.paypalIsVerified) {
+      throw new ApiError(
+        403,
+        "Verify your PayPal account before adding a child",
+        "PAYPAL_VERIFICATION_REQUIRED"
+      );
+    }
+
     const existingChildWithName = await prisma.child.findFirst({
       where: {
         familyId: family.id,
@@ -153,6 +161,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const existingUsername = await prisma.child.findUnique({
+      where: { username: input.username },
+      select: { id: true },
+    });
+    if (existingUsername) {
+      throw new ApiError(
+        409,
+        "That username is already taken",
+        "USERNAME_TAKEN"
+      );
+    }
+
     const pinHash = await bcrypt.hash(input.pin, 10);
 
     const created = await prisma.$transaction(async (tx) => {
@@ -160,6 +180,7 @@ export async function POST(req: NextRequest) {
         data: {
           familyId: family.id,
           name: input.name,
+          username: input.username,
           age: input.age,
           avatar: input.avatar,
           theme: input.theme,
@@ -213,6 +234,7 @@ export async function POST(req: NextRequest) {
           targetId: child.id,
           details: {
             childName: child.name,
+            username: child.username,
             age: child.age,
             consentId: consentRecord.id,
             consentVersion: consentRecord.consentVersion,
@@ -231,12 +253,12 @@ export async function POST(req: NextRequest) {
         child: {
           id: created.child.id,
           name: created.child.name,
+          username: created.child.username,
           age: created.child.age,
           avatar: created.child.avatar,
           theme: created.child.theme,
           quietHoursStart: created.child.quietHoursStart,
           quietHoursEnd: created.child.quietHoursEnd,
-          familyCode: family.familyCode,
         },
         wallet: {
           id: created.wallet.id,

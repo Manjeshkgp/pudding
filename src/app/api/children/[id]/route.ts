@@ -13,9 +13,11 @@ import {
   requireParent,
 } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { childUsernameSchema } from "@/lib/child-credentials";
 
 const updateChildSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
+  username: childUsernameSchema.optional(),
   age: z.number().int().min(6).max(17).optional(),
   avatar: z.string().trim().max(100).optional(),
   theme: z.string().trim().max(50).optional(),
@@ -67,6 +69,7 @@ export async function GET(
     return apiSuccess({
       id: fullChild.id,
       name: fullChild.name,
+      username: fullChild.username,
       age: fullChild.age,
       avatar: fullChild.avatar,
       theme: fullChild.theme,
@@ -118,9 +121,32 @@ export async function PATCH(
     const input = await validateBody(req, updateChildSchema);
 
     // Children can only customize their avatar and theme (FR-11.3)
+    if (!isParent && input.username !== undefined) {
+      throw new ApiError(
+        403,
+        "Only a parent can change a child's username",
+        "USERNAME_PARENT_ONLY"
+      );
+    }
+
+    if (isParent && input.username && input.username !== child.username) {
+      const taken = await prisma.child.findUnique({
+        where: { username: input.username },
+        select: { id: true },
+      });
+      if (taken) {
+        throw new ApiError(
+          409,
+          "That username is already taken",
+          "USERNAME_TAKEN"
+        );
+      }
+    }
+
     const updateData: Prisma.ChildUpdateInput = isParent
       ? {
           ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.username !== undefined ? { username: input.username } : {}),
           ...(input.age !== undefined ? { age: input.age } : {}),
           ...(input.avatar !== undefined ? { avatar: input.avatar } : {}),
           ...(input.theme !== undefined ? { theme: input.theme } : {}),

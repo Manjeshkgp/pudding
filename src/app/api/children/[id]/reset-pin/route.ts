@@ -10,11 +10,10 @@ import {
 } from "@/lib/api-response";
 import { requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { childPinSchema } from "@/lib/child-credentials";
 
 const resetPinSchema = z.object({
-  newPin: z
-    .string()
-    .regex(/^[0-9]{4,6}$/, "New PIN must be 4 to 6 digits (FR-1.5, FR-10.5)"),
+  newPin: childPinSchema,
 });
 
 /**
