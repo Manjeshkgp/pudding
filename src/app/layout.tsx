@@ -1,8 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import MobileOnly from "@/components/mobile-only";
 
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 export const metadata: Metadata = {
-  title: "GoodSpend — Smart Family & Kids Money App",
+  title: "Pudding",
   description:
     "Teach children healthy money habits through safe, supervised earning, saving, and spending.",
 };
@@ -14,8 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        {children}
+      <body className="min-h-dvh bg-white text-slate-900 antialiased">
+        <div className="desktop:hidden">{children}</div>
+        <MobileOnly />
       </body>
     </html>
   );
