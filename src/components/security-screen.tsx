@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import HelpLink from "@/components/help-link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -92,8 +93,7 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
             <Link href={step === 1 ? "/password" : "/security"} aria-label="Back" className={circle}>
               <ChevronLeftIcon className="size-6 text-black" />
             </Link>
-            <button
-              type="button"
+            <HelpLink
               aria-label="Help"
               className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${
                 focused
@@ -102,7 +102,7 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
               }`}
             >
               <QuestionCircleIcon className="size-6 text-black" />
-            </button>
+            </HelpLink>
           </div>
 
           <motion.div

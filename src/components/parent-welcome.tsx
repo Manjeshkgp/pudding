@@ -68,12 +68,12 @@ export default function ParentWelcome() {
               Get started
               <ChevronRightIcon className="absolute right-5 top-1/2 size-6 -translate-y-1/2 text-white" />
             </Link>
-            <button
-              type="button"
+            <Link
+              href="/login"
               className="flex h-[52px] w-full items-center justify-center rounded-full bg-[#e8e8e8] px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black shadow-[inset_-2px_-4px_32px_0px_rgba(255,255,255,0.3)]"
             >
               I already have an account
-            </button>
+            </Link>
           </div>
         </BottomSheet>
       </div>

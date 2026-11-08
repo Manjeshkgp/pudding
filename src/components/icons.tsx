@@ -151,3 +151,136 @@ export function CheckmarkIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+// Calendar (Hollow) from the Pudding icon set.
+export function CalendarIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 5H17V2H19V5H22V21H2V5H5V2H7V5ZM6 14.125V16.625H8.5V14.125H6ZM10.75 14.125V16.625H13.25V14.125H10.75ZM15.5 14.125V16.625H18V14.125H15.5ZM6 9.375V11.875H8.5V9.375H6ZM10.75 9.375V11.875H13.25V9.375H10.75ZM15.5 9.375V11.875H18V9.375H15.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+// Close (Hollow) from the Pudding icon set.
+export function CloseIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 10.5859L5.63602 4.22192L4.2218 5.63614L10.5858 12.0001L4.2218 18.3641L5.63602 19.7783L12 13.4143L18.3639 19.7783L19.7781 18.3641L13.4142 12.0001L19.7781 5.63614L18.3639 4.22192L12 10.5859Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+// Chevron up (Hollow) from the Pudding icon set.
+export function ChevronUpIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 6.58569L3.58582 14.9999L5.00003 16.4141L12 9.41412L19 16.4141L20.4142 14.9999L12 6.58569Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function GiftIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2.05051C12.6353 1.40223 13.5207 1 14.5 1C16.433 1 18 2.567 18 4.5C18 5.0368 17.8792 5.54537 17.6632 6H22V14H21V22H3V14H2V6H6.33682C6.12085 5.54537 6 5.0368 6 4.5C6 2.567 7.567 1 9.5 1C10.4793 1 11.3647 1.40223 12 2.05051ZM11 4.5C11 3.67157 10.3284 3 9.5 3C8.67157 3 8 3.67157 8 4.5C8 5.32843 8.67157 6 9.5 6C10.3284 6 11 5.32843 11 4.5ZM4 8V12H11V8H4ZM16 4.5C16 5.32843 15.3284 6 14.5 6C13.6716 6 13 5.32843 13 4.5C13 3.67157 13.6716 3 14.5 3C15.3284 3 16 3.67157 16 4.5ZM13 8H20V12H13V8ZM13 14V20H19V14H13ZM11 14H5V20H11V14Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M11 2C6.02944 2 2 6.02944 2 11C2 15.9706 6.02944 20 11 20C13.125 20 15.078 19.2635 16.6177 18.0319L21 22.4142L22.4142 21L18.0319 16.6177C19.2635 15.078 20 13.125 20 11C20 6.02944 15.9706 2 11 2ZM4 11C4 7.13401 7.13401 4 11 4C14.866 4 18 7.13401 18 11C18 14.866 14.866 18 11 18C7.13401 18 4 14.866 4 11Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function UserIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C9.51472 2 7.5 4.01472 7.5 6.5C7.5 8.98528 9.51472 11 12 11C14.4853 11 16.5 8.98528 16.5 6.5C16.5 4.01472 14.4853 2 12 2ZM9.5 6.5C9.5 5.11929 10.6193 4 12 4C13.3807 4 14.5 5.11929 14.5 6.5C14.5 7.88071 13.3807 9 12 9C10.6193 9 9.5 7.88071 9.5 6.5Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 12.5C7.58172 12.5 4 16.0817 4 20.5V22H20V20.5C20 16.0817 16.4183 12.5 12 12.5ZM12 14.5C15.1453 14.5 17.7254 16.9202 17.9795 20H6.02054C6.27461 16.9202 8.85467 14.5 12 14.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SlidersIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M6 6.17071V3H4V6.17071C2.83481 6.58254 2 7.69378 2 9C2 10.3062 2.83481 11.4175 4 11.8293V21H6V11.8293C7.16519 11.4175 8 10.3062 8 9C8 7.69378 7.16519 6.58254 6 6.17071ZM4 9C4 8.44772 4.44772 8 5 8C5.55228 8 6 8.44772 6 9C6 9.55228 5.55228 10 5 10C4.44772 10 4 9.55228 4 9Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M11 13.1707C9.83481 13.5825 9 14.6938 9 16C9 17.3062 9.83481 18.4175 11 18.8293V21H13V18.8293C14.1652 18.4175 15 17.3062 15 16C15 14.6938 14.1652 13.5825 13 13.1707V3H11V13.1707ZM11 16C11 15.4477 11.4477 15 12 15C12.5523 15 13 15.4477 13 16C13 16.5523 12.5523 17 12 17C11.4477 17 11 16.5523 11 16Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M20 8.17071V3H18V8.17071C16.8348 8.58254 16 9.69378 16 11C16 12.3062 16.8348 13.4175 18 13.8293V21H20V13.8293C21.1652 13.4175 22 12.3062 22 11C22 9.69378 21.1652 8.17071 20 8.17071ZM18 11C18 10.4477 18.4477 10 19 10C19.5523 10 20 10.4477 20 11C20 11.5523 19.5523 12 19 12C18.4477 12 18 11.5523 18 11Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ShieldIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 1.91211L15.6362 3.47047L20 2.84707V11.9449C20 15.4302 18.1395 18.6505 15.1201 20.3915L12.0669 22.1518L8.94502 20.3837C5.88897 18.6528 4 15.4121 4 11.8999V2.84707L8.36382 3.47047L12 1.91211ZM12 4.08804L8.63618 5.52968L6 5.15309V11.8999C6 14.6916 7.50149 17.2676 9.93066 18.6434L12.0581 19.8483L14.1211 18.6588C16.5212 17.275 18 14.7153 18 11.9449V5.15309L15.3638 5.52968L12 4.08804Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function HeartIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M4.92358 6.73514C4.33138 7.50833 4 8.59846 4 9.76667C4 10.939 4.46115 12.1359 5.24024 13.3135C6.01747 14.4882 7.07215 15.584 8.15795 16.5327C9.23993 17.4781 10.3267 18.2547 11.1452 18.7959C11.4846 19.0202 11.7761 19.203 12 19.3394C12.2239 19.203 12.5154 19.0202 12.8548 18.7959C13.6733 18.2547 14.7601 17.4781 15.842 16.5327C16.9279 15.584 17.9825 14.4882 18.7598 13.3135C19.5388 12.1359 20 10.939 20 9.76667C20 8.59667 19.6708 7.5067 19.0805 6.73435C18.5118 5.99035 17.6757 5.5 16.5 5.5C15.2968 5.5 14.3905 5.99713 13.7652 6.51822C13.4519 6.77926 13.2168 7.04069 13.0621 7.23407C12.9852 7.33022 12.9294 7.40794 12.895 7.45811C12.8779 7.48314 12.8661 7.50115 12.8598 7.51098C12.8576 7.51449 12.8561 7.51695 12.8552 7.51829L12.0036 8.93773L11.1466 7.52134C11.1458 7.51998 11.1442 7.51747 11.1419 7.51386C11.1355 7.50394 11.1236 7.48583 11.1062 7.4607C11.0715 7.41034 11.0152 7.33241 10.9377 7.23605C10.7818 7.04223 10.5453 6.78033 10.2309 6.51888C9.6028 5.99653 8.69628 5.5 7.5 5.5C6.3315 5.5 5.49462 5.98958 4.92358 6.73514ZM12 20.5C11.5148 21.3744 11.5146 21.3743 11.5143 21.3741L11.5115 21.3726C11.5099 21.3717 11.5077 21.3704 11.5049 21.3689C11.4995 21.3658 11.4919 21.3616 11.4822 21.3561C11.4628 21.3452 11.4352 21.3294 11.3997 21.309C11.3289 21.2682 11.227 21.2087 11.0985 21.1316C10.8417 20.9773 10.4777 20.7521 10.0423 20.4643C9.17334 19.8898 8.01007 19.0594 6.84205 18.0388C5.67785 17.0217 4.48253 15.7929 3.57226 14.417C2.66385 13.044 2 11.4643 2 9.76667C2 8.25154 2.42487 6.70834 3.3358 5.51902C4.26788 4.30209 5.681 3.5 7.5 3.5C9.29122 3.5 10.6347 4.25347 11.5097 4.98112C11.6913 5.13212 11.8541 5.28305 11.9982 5.42761C12.1418 5.28323 12.3039 5.13254 12.4848 4.98178C13.3595 4.25287 14.7032 3.5 16.5 3.5C18.3243 3.5 19.7382 4.30132 20.6695 5.51982C21.5792 6.70997 22 8.25333 22 9.76667C22 11.4643 21.3362 13.044 20.4277 14.417C19.5175 15.7929 18.3221 17.0217 17.158 18.0388C15.9899 19.0594 14.8267 19.8898 13.9577 20.4643C13.5223 20.7521 13.1583 20.9773 12.9015 21.1316C12.773 21.2087 12.6711 21.2682 12.6003 21.309C12.5648 21.3294 12.5372 21.3452 12.5178 21.3561C12.5132 21.3587 12.5091 21.361 12.5055 21.363C12.5014 21.3653 12.4979 21.3673 12.4951 21.3689C12.4923 21.3704 12.4901 21.3717 12.4885 21.3726L12.4857 21.3741C12.4854 21.3743 12.4852 21.3744 12 20.5ZM12 20.5L12.4852 21.3744L12 21.6436L11.5148 21.3744L12 20.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function UploadIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M17.3517 7.36245L13 3.01074V2.99995H12.9892L12 2.01074L11.0108 2.99995H11V3.01075L6.64829 7.36245L8.0625 8.77667L11 5.83917L11 17H13L13 5.83916L15.9375 8.77667L17.3517 7.36245Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M5 20V15H3V22H21V15H19V20H5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function CardIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M11 13.5L6 13.5V15.5L11 15.5V13.5Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M2 4.5H22V19.5H2V4.5ZM4 6.5V9.5H20V6.5H4ZM4 17.5V11.5H20V17.5H4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function PowerIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M13 2L11 2V14.5H13V2Z" fill="currentColor" />
+      <path d="M9 5.62407V3.48341C5.22342 4.73933 2.5 8.30162 2.5 12.5C2.5 17.7467 6.75329 22 12 22C17.2467 22 21.5 17.7467 21.5 12.5C21.5 8.30162 18.7766 4.73934 15 3.48341V5.62407C17.6489 6.7814 19.5 9.42452 19.5 12.5C19.5 16.6421 16.1421 20 12 20C7.85786 20 4.5 16.6421 4.5 12.5C4.5 9.42452 6.35114 6.7814 9 5.62407Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function FileIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M16 11H8V13H16V11Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M8 7H14V9H8V7Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M16 15H8V17H16V15Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M15.4142 2H4V22H20V6.58579L15.4142 2ZM6 20V4H14.5858L18 7.41421V20H6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function RefreshIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M20 12C20 7.58172 16.4183 4 12 4V2C17.5229 2 22 6.47715 22 12C22 17.5228 17.5229 22 12 22C6.47718 22 2.00002 17.5228 2.00002 12C2.00002 9.35486 3.02741 6.9501 4.70299 5.1625L1.52502 5.1625L1.52502 3.1625L8.52502 3.1625V10.1625H6.52502L6.52502 6.16678C4.96974 7.62702 4.00002 9.70051 4.00002 12C4.00002 16.4183 7.58175 20 12 20C16.4183 20 20 16.4183 20 12Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function GearIcon({ className }: IconProps) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 8.4999C10.067 8.4999 8.50002 10.0669 8.50002 11.9999C8.50002 13.9329 10.067 15.4999 12 15.4999C13.933 15.4999 15.5 13.9329 15.5 11.9999C15.5 10.0669 13.933 8.4999 12 8.4999ZM10.5 11.9999C10.5 11.1715 11.1716 10.4999 12 10.4999C12.8285 10.4999 13.5 11.1715 13.5 11.9999C13.5 12.8283 12.8285 13.4999 12 13.4999C11.1716 13.4999 10.5 12.8283 10.5 11.9999Z" fill="currentColor" />
+      <path fillRule="evenodd" clipRule="evenodd" d="M15.0503 4.63594L12 1.58569L8.94978 4.63594H4.63606V8.94966L1.58582 11.9999L4.63606 15.0502V19.3639H8.94978L12 22.4141L15.0503 19.3639H19.364V15.0502L22.4142 11.9999L19.364 8.94965V4.63594H15.0503ZM9.77821 6.63594L12 4.41412L14.2219 6.63594H17.364V9.77808L19.5858 11.9999L17.364 14.2217V17.3639H14.2219L12 19.5857L9.7782 17.3639H6.63606V14.2217L4.41424 11.9999L6.63606 9.77809V6.63594H9.77821Z" fill="currentColor" />
+    </svg>
+  );
+}

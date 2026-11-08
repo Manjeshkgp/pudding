@@ -1,4 +1,5 @@
 import Link from "next/link";
+import HelpLink from "@/components/help-link";
 import { ChevronLeftIcon, QuestionCircleIcon } from "@/components/icons";
 
 const circle =
@@ -21,8 +22,7 @@ export default function TopBar({
         <ChevronLeftIcon className="size-6 text-black" />
       </Link>
       {help && (
-        <button
-          type="button"
+        <HelpLink
           aria-label="Help"
           className={
             glassHelp
@@ -31,7 +31,7 @@ export default function TopBar({
           }
         >
           <QuestionCircleIcon className="size-6 text-black" />
-        </button>
+        </HelpLink>
       )}
     </div>
   );

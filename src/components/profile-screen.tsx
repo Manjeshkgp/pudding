@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import HelpLink from "@/components/help-link";
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ChevronLeftIcon,
@@ -23,6 +25,7 @@ const circle =
   "flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]";
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [focused, setFocused] = useState(false);
@@ -36,8 +39,12 @@ export default function ProfileScreen() {
 
   function submit() {
     if (loading || !valid) return;
-    // No next screen yet, so the spinner stays
     setLoading(true);
+    // The next screen shows the picture picked here
+    try {
+      sessionStorage.setItem("pudding-avatar", String(avatar));
+    } catch {}
+    window.setTimeout(() => router.push("/add-kid"), 1500);
   }
 
   const barText =
@@ -55,8 +62,7 @@ export default function ProfileScreen() {
             <Link href="/security-2" aria-label="Back" className={circle}>
               <ChevronLeftIcon className="size-6 text-black" />
             </Link>
-            <button
-              type="button"
+            <HelpLink
               aria-label="Help"
               className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${
                 focused
@@ -65,7 +71,7 @@ export default function ProfileScreen() {
               }`}
             >
               <QuestionCircleIcon className="size-6 text-black" />
-            </button>
+            </HelpLink>
           </div>
 
           <motion.div
