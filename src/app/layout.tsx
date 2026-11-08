@@ -2,7 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import MobileOnly from "@/components/mobile-only";
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  // Phone keyboards shrink the page, so bottom bars sit above the keyboard
+  interactiveWidget: "resizes-content",
+};
 export const metadata: Metadata = {
   title: "Pudding",
   description:

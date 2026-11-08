@@ -34,3 +34,34 @@ html,
 body {
   overscroll-behavior: none;
 }
+
+/* New screens slide in from the right */
+@keyframes page-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* While sliding, the screen is pinned to the viewport so it cannot scroll
+   or push the page sideways. Fixed bars inside it move with it. */
+.page-slide-in {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  animation: page-slide-in 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-slide-in {
+    position: static;
+    animation: none;
+  }
+}
+
+html,
+body {
+  overflow-x: clip;
+}
