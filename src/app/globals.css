@@ -65,3 +65,37 @@ html,
 body {
   overflow-x: clip;
 }
+
+/* Pinned cards (kid home and earn): the card pins near the top and shrinks
+   while the page scrolls. Runs on the scroll timeline so it stays smooth.
+   The numbers come from pin-card.tsx as --kh-* variables. */
+@supports (animation-timeline: scroll()) {
+  @keyframes kh-pin {
+    to { transform: translateY(3000px); }
+  }
+  @keyframes kh-clip {
+    from { clip-path: inset(0 0 0 0 round 32px); }
+    to { clip-path: inset(0 0 var(--kh-shrink) 0 round 32px); }
+  }
+  @keyframes kh-content {
+    to { transform: translateY(calc(-1 * var(--kh-shrink))); }
+  }
+  @keyframes kh-bar {
+    from { height: var(--kh-bar-start); }
+    to { height: var(--kh-bar-end); }
+  }
+  .kh-pin {
+    animation: kh-pin linear both;
+    animation-timeline: scroll(root);
+    animation-range: var(--kh-start) calc(var(--kh-start) + 3000px);
+  }
+  .kh-clip, .kh-content, .kh-bar {
+    animation-timeline: scroll(root);
+    animation-range: var(--kh-start) calc(var(--kh-start) + var(--kh-shrink));
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+  }
+  .kh-clip { animation-name: kh-clip; }
+  .kh-content { animation-name: kh-content; }
+  .kh-bar { animation-name: kh-bar; }
+}

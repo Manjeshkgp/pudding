@@ -29,7 +29,34 @@ const MIN_PASSWORD = 8;
 
 type FieldName = "email" | "password";
 
-export default function LoginScreen() {
+export type LoginCopy = {
+  backHref: string;
+  nextHref: string;
+  title: string;
+  subtitle: string;
+  focusedTitle: string;
+  emailPlaceholder: string;
+  // Field label, "Email" when left out
+  emailLabel?: string;
+  // Email field accepts any text (kids use a username)
+  plainEmail?: boolean;
+  // Show the sample "Combination is invalid" error on the first attempt
+  sampleError?: boolean;
+  // Where "Forgot password?" goes (nothing happens when left out)
+  forgotHref?: string;
+};
+
+const PARENT: LoginCopy = {
+  backHref: "/parent",
+  nextHref: "/crew",
+  title: "Nice to see you again",
+  subtitle: "Pick up where you left off your journey.",
+  focusedTitle: "Log in",
+  emailPlaceholder: "Enter your mail",
+  sampleError: true,
+};
+
+export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
   const router = useRouter();
   const passwordRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
@@ -45,7 +72,8 @@ export default function LoginScreen() {
   const { open, offset } = useKeyboard(activeRef);
 
   const focused = focus !== null;
-  const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && password.length >= MIN_PASSWORD;
+  const emailOk = copy.plainEmail ? email.trim() !== "" : /^\S+@\S+\.\S+$/.test(email.trim());
+  const valid = emailOk && password.length >= MIN_PASSWORD;
   const onKeyboard = (focused && open) || ((loading || error) && open);
 
   // Keyboard dismissed (back gesture): drop focus so the header comes back
@@ -75,11 +103,11 @@ export default function LoginScreen() {
     window.setTimeout(() => {
       setLoading(false);
       attempts.current += 1;
-      if (attempts.current === 1) {
+      if (copy.sampleError && attempts.current === 1) {
         setError(true);
         setToast(true);
       } else {
-        router.push("/crew");
+        router.push(copy.nextHref);
       }
     }, 1500);
   }
@@ -91,7 +119,7 @@ export default function LoginScreen() {
     value: string;
     set: (v: string) => void;
   }[] = [
-    { name: "email", title: "Email", placeholder: "Enter your mail", value: email, set: setEmail },
+    { name: "email", title: copy.emailLabel ?? "Email", placeholder: copy.emailPlaceholder, value: email, set: setEmail },
     { name: "password", title: "Password", placeholder: "Enter your password", value: password, set: setPassword },
   ];
 
@@ -125,7 +153,7 @@ export default function LoginScreen() {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="relative flex h-11 items-center justify-between">
-            <Link href="/parent" aria-label="Back" className={circle}>
+            <Link href={copy.backHref} aria-label="Back" className={circle}>
               <ChevronLeftIcon className="size-6 text-black" />
             </Link>
             <HelpLink aria-label="Help" className={circle}>
@@ -158,7 +186,7 @@ export default function LoginScreen() {
                 }}
                 transition={ease}
               >
-                {focused ? "Log in" : "Nice to see you again"}
+                {focused ? copy.focusedTitle : copy.title}
               </motion.h1>
             </motion.div>
             <motion.p
@@ -171,7 +199,7 @@ export default function LoginScreen() {
               }}
               transition={ease}
             >
-              Pick up where you left off your journey.
+              {copy.subtitle}
             </motion.p>
           </motion.div>
         </div>
@@ -199,9 +227,9 @@ export default function LoginScreen() {
                   <input
                     ref={isEmail ? undefined : passwordRef}
                     id={f.name}
-                    type={isEmail ? "email" : shown ? "text" : "password"}
-                    inputMode={isEmail ? "email" : undefined}
-                    autoComplete={isEmail ? "email" : "current-password"}
+                    type={isEmail ? (copy.plainEmail ? "text" : "email") : shown ? "text" : "password"}
+                    inputMode={isEmail && !copy.plainEmail ? "email" : undefined}
+                    autoComplete={isEmail ? (copy.plainEmail ? "username" : "email") : "current-password"}
                     autoCapitalize="none"
                     enterKeyHint={isEmail ? "next" : "go"}
                     value={f.value}
@@ -233,7 +261,7 @@ export default function LoginScreen() {
                   ) : isFocused && f.value && isEmail ? (
                     <button
                       type="button"
-                      aria-label="Clear email"
+                      aria-label={copy.plainEmail ? "Clear username" : "Clear email"}
                       // keep the keyboard open
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => edit(setEmail, "")}
@@ -265,6 +293,7 @@ export default function LoginScreen() {
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
+              onClick={() => copy.forgotHref && router.push(copy.forgotHref)}
               className="flex h-[43px] items-center justify-center rounded-full bg-[#f3f3f3] px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
             >
               Forgot password?
