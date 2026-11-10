@@ -82,13 +82,13 @@ export default function ParentHome() {
           <p className="font-display text-[52px] font-bold leading-[64px] tracking-[-0.78px] text-black">
             $0.00
           </p>
-          <button
-            type="button"
+          <Link
+            href="/topup"
             className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
           >
             Top your wallet now
             <ChevronRightIcon className="size-5" />
-          </button>
+          </Link>
         </div>
 
         {/* Kid cards */}
@@ -173,8 +173,8 @@ export default function ParentHome() {
 
       {/* Top up */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center px-2.5 pb-[max(48px,env(safe-area-inset-bottom))] pt-4">
-        <button
-          type="button"
+        <Link
+          href="/topup"
           className="pointer-events-auto flex items-center justify-center rounded-full border-[2.5px] border-transparent px-5 py-3 font-display text-[20px] font-bold leading-7 tracking-[-0.15px] text-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] transition-transform active:scale-95"
           style={{
             background:
@@ -182,7 +182,7 @@ export default function ParentHome() {
           }}
         >
           Top up
-        </button>
+        </Link>
       </div>
     </main>
   );
