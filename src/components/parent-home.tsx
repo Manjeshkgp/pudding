@@ -14,7 +14,7 @@ const TABS = ["Parents wallet", "Alex Silvestri", "Elena Silvestri"];
 
 const KIDS = [
   { name: "Alex Silvestri", banner: "blue" },
-  { name: "Elena Silvestri", banner: "black" },
+  { name: "Elena Silvestri", banner: "blue" },
 ];
 
 function BankIcon({ className }: { className?: string }) {
@@ -72,7 +72,7 @@ export default function ParentHome() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f1f7fa]">
+    <main className="min-h-dvh bg-[#f3f3f3]">
       <div className="mx-auto w-full max-w-[520px] pb-[140px] pt-[max(16px,env(safe-area-inset-top))]">
         {/* Header */}
         <div className="flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -108,10 +108,10 @@ export default function ParentHome() {
           </p>
           <Link
             href="/topup"
-            onClick={(e) => launchTopup(e, "#f1f7fa")}
+            onClick={(e) => launchTopup(e, "#f3f3f3")}
             className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
           >
-            Top your wallet now
+            Top-up your wallet now
             <ChevronRightIcon className="size-5" />
           </Link>
         </div>
@@ -166,8 +166,11 @@ export default function ParentHome() {
                       </div>
                       <button
                         type="button"
+                        onClick={() => {
+                          if (r.label === "Wallet") router.push(`/activate/${k.name.split(" ")[0].toLowerCase()}`);
+                        }}
                         className={`rounded-full px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] transition-opacity active:opacity-80 ${
-                          r.primary ? "bg-black text-white" : "bg-[#f3f3f3] text-black"
+                          r.primary ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]"
                         }`}
                       >
                         {r.action}
@@ -178,7 +181,7 @@ export default function ParentHome() {
               </div>
 
               <div
-                className={`flex items-center gap-3 px-5 pb-6 pt-5 ${
+                className={`flex items-center gap-3 px-5 pb-5 pt-4 ${
                   k.banner === "blue" ? "bg-[#a0e1e1] text-black" : "bg-black text-white"
                 }`}
               >
@@ -198,7 +201,7 @@ export default function ParentHome() {
 
       {/* Top up */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center px-2.5 pb-[max(48px,env(safe-area-inset-bottom))] pt-4">
-        <TopupPill onLaunch={(e) => launchTopup(e, "#260a2f")} />
+        <TopupPill label="Transfer" />
       </div>
 
       {grow && (

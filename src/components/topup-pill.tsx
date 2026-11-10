@@ -4,14 +4,16 @@ import { useEffect, useRef } from "react";
 import { animate, motion, useMotionTemplate, useMotionValue } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
 
-// The "Top up" pill. Its gradient border slowly drifts on its own, and
+// The floating pill (Transfer). Its gradient border slowly drifts on its own, and
 // follows your finger or cursor while you are over it.
 export default function TopupPill({
-  onLaunch,
+  label,
+  onClick,
 }: {
-  onLaunch: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+  label: string;
+  onClick?: () => void;
 }) {
-  const ref = useRef<HTMLAnchorElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
   const angle = useMotionValue(135);
   const drift = useRef<AnimationPlaybackControls | null>(null);
 
@@ -30,7 +32,7 @@ export default function TopupPill({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function follow(e: React.PointerEvent<HTMLAnchorElement>) {
+  function follow(e: React.PointerEvent<HTMLButtonElement>) {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
     drift.current?.stop();
@@ -46,10 +48,10 @@ export default function TopupPill({
   const background = useMotionTemplate`linear-gradient(#260a2f,#260a2f) padding-box, conic-gradient(from ${angle}deg, #d9d9d9, #7a5a88 25%, #ffffff 50%, #7a5a88 75%, #d9d9d9) border-box`;
 
   return (
-    <motion.a
+    <motion.button
       ref={ref}
-      href="/topup"
-      onClick={onLaunch}
+      type="button"
+      onClick={onClick}
       onPointerEnter={follow}
       onPointerMove={follow}
       onPointerDown={follow}
@@ -60,7 +62,7 @@ export default function TopupPill({
       className="pointer-events-auto flex items-center justify-center rounded-full border-[2.5px] border-transparent px-5 py-3 font-display text-[20px] font-bold leading-7 tracking-[-0.15px] text-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)]"
       style={{ background }}
     >
-      Top up
-    </motion.a>
+      {label}
+    </motion.button>
   );
 }

@@ -284,3 +284,21 @@ export function GearIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+// Filled question circle used for hints and notes. `dot` is the circle, `mark` the question mark.
+export function QuestionCircleFilledIcon({
+  className,
+  mark = "#fff",
+  dot = "#000",
+}: IconProps & { mark?: string; dot?: string }) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill={dot} />
+      <path
+        d="M8 10C8 7.79086 9.79086 6 12 6C14.2091 6 16 7.79086 16 10C16 11.8638 14.7252 13.4299 13 13.874V14.5125H11V12H12C13.1046 12 14 11.1046 14 10C14 8.89543 13.1046 8 12 8C10.8954 8 10 8.89543 10 10H8Z"
+        fill={mark}
+      />
+      <path d="M13 18V16H11V18H13Z" fill={mark} />
+    </svg>
+  );
+}
