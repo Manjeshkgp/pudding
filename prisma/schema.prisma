@@ -224,6 +224,7 @@ model User {
   phone                  String?                 @unique
   passwordHash           String
   name                   String
+  avatar                 String                  @default("avatar-1")
   role                   UserRole                @default(PRIMARY_PARENT)
   permissionLevel        CoParentPermissionLevel @default(EQUAL)
   permissions            Json?
@@ -233,6 +234,9 @@ model User {
   paypalVerifiedEmail    String?
   paypalIsVerified       Boolean                 @default(false)
   paypalLinkedAt         DateTime?
+  paypalCustomerId       String?
+  paypalVaultId          String?
+  paypalSetupTokenId     String?
   mfaEnabled             Boolean                 @default(false)
   mfaSecret              String?
   isFrozen               Boolean                 @default(false)
@@ -256,6 +260,7 @@ model User {
 
   @@index([familyId])
   @@index([email])
+  @@index([paypalSetupTokenId])
 }
 
 model CoParentInvite {
@@ -285,11 +290,14 @@ model Child {
   id                   String    @id @default(cuid())
   familyId             String
   name                 String
+  firstName            String?
+  lastName             String?
   username             String    @unique
+  dateOfBirth          DateTime? @db.Date
   age                  Int
   avatar               String    @default("default-kid")
   theme                String    @default("ocean")
-  pinHash              String
+  pinHash              String?
   failedPinAttempts    Int       @default(0)
   pinLockedUntil       DateTime?
   isFrozen             Boolean   @default(false)
@@ -694,6 +702,24 @@ model UserSecurityQuestion {
 
   @@unique([userId, questionKey])
   @@index([userId])
+}
+
+// Temporary parent onboarding data used while email, password, and security
+// questions are collected across the staged Pudding signup flow.
+model ParentSignupDraft {
+  id                    String   @id @default(cuid())
+  email                 String   @unique
+  otpHash               String?
+  otpExpiresAt          DateTime?
+  otpAttempts           Int      @default(0)
+  emailVerifiedAt       DateTime?
+  passwordHash          String?
+  securityQuestions     Json?
+  expiresAt             DateTime
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([expiresAt])
 }
 
 model NotificationPreference {

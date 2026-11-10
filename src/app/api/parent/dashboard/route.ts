@@ -211,6 +211,7 @@ export async function GET(req: NextRequest) {
       parent: {
         id: user.id,
         name: user.name,
+        avatar: user.avatar,
         email: user.email,
         role: user.role,
         paypalIsVerified: user.paypalIsVerified,

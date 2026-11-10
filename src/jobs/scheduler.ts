@@ -3,6 +3,7 @@ import { processDueAllowances } from "./allowance.job";
 import { processSavingsInterest } from "./interest.job";
 import { runPayPalReconciliation } from "./reconciliation.job";
 import { runWeeklyDigestJob } from "./weekly-digest.job";
+import { logger } from "@/lib/logger";
 
 const globalForCron = globalThis as unknown as {
   goodspendCronInitialized?: boolean;
@@ -28,7 +29,7 @@ export function initInProcessCronJobs() {
     try {
       await processDueAllowances();
     } catch (err) {
-      console.error("[Cron Error - Allowances]:", err);
+      logger.error("cron.job_failed", { job: "allowances" }, err);
     }
   });
 
@@ -37,7 +38,7 @@ export function initInProcessCronJobs() {
     try {
       await processSavingsInterest();
     } catch (err) {
-      console.error("[Cron Error - Savings Interest]:", err);
+      logger.error("cron.job_failed", { job: "savings_interest" }, err);
     }
   });
 
@@ -46,7 +47,7 @@ export function initInProcessCronJobs() {
     try {
       await runPayPalReconciliation();
     } catch (err) {
-      console.error("[Cron Error - PayPal Reconciliation]:", err);
+      logger.error("cron.job_failed", { job: "paypal_reconciliation" }, err);
     }
   });
 
@@ -55,7 +56,7 @@ export function initInProcessCronJobs() {
     try {
       await runWeeklyDigestJob();
     } catch (err) {
-      console.error("[Cron Error - Weekly Digest]:", err);
+      logger.error("cron.job_failed", { job: "weekly_digest" }, err);
     }
   });
 }

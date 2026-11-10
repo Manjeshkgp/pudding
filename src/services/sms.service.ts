@@ -5,6 +5,7 @@
  * while maintaining the exact interface needed to plug in Twilio, AWS SNS, or MSG91
  * later without changing any API routes, database models, or verification flows.
  */
+import { logger } from "@/lib/logger";
 
 export interface SendSmsPayload {
   toPhone: string;
@@ -24,9 +25,10 @@ export interface SmsProviderAdapter {
 
 class MockSmsAdapter implements SmsProviderAdapter {
   async sendSms(payload: SendSmsPayload): Promise<SendSmsResult> {
-    console.info("[SmsService:MOCK_PROVIDER]", {
-      toPhone: payload.toPhone,
-      message: payload.message,
+    logger.info("sms.mock_dispatch", {
+      provider: "mock",
+      outcome: "not_sent",
+      recipientPresent: Boolean(payload.toPhone),
     });
     return {
       delivered: true,

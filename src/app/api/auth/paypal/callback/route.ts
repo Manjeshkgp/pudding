@@ -3,6 +3,7 @@ import { jwtVerify } from "jose";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 function getStateSecret(): Uint8Array {
   return new TextEncoder().encode(
@@ -12,9 +13,12 @@ function getStateSecret(): Uint8Array {
 
 interface PayPalUserInfoResponse {
   user_id?: string;
+  sub?: string;
   payer_id?: string;
+  account_id?: string;
   name?: string;
   email?: string;
+  email_verified?: boolean;
   verified?: boolean | string;
   verified_account?: boolean | string;
   emails?: Array<{
@@ -53,13 +57,14 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    let statePayload: { userId: string; familyId: string; purpose: string };
+    let statePayload: { userId: string; familyId: string; purpose: string; returnTo?: string };
     try {
       const verified = await jwtVerify(state, getStateSecret());
       statePayload = verified.payload as unknown as {
         userId: string;
         familyId: string;
         purpose: string;
+        returnTo?: string;
       };
     } catch {
       throw new ApiError(
@@ -108,23 +113,87 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
+      logger.error("paypal.oauth.code_exchange_failed", {
+        provider: "paypal",
+        operation: "exchange_authorization_code",
+        httpStatus: tokenRes.status,
+        paypalDebugId: tokenRes.headers.get("paypal-debug-id"),
+        providerError: errBody,
+      });
       throw new ApiError(
         502,
         "Failed to exchange PayPal authorization code",
         "PAYPAL_TOKEN_EXCHANGE_FAILED",
-        errBody
+        {
+          httpStatus: tokenRes.status,
+          paypalDebugId: tokenRes.headers.get("paypal-debug-id"),
+        }
       );
     }
 
-    const tokenData = (await tokenRes.json()) as { access_token: string };
+    const tokenData = (await tokenRes.json()) as {
+      access_token: string;
+      refresh_token?: string;
+      scope?: string;
+    };
 
-    // 2. Fetch PayPal user profile and verified_account status
+    if (!tokenData.refresh_token) {
+      throw new ApiError(
+        502,
+        "PayPal did not return a refresh token for the identity flow",
+        "PAYPAL_REFRESH_TOKEN_MISSING",
+        { grantedScopes: tokenData.scope }
+      );
+    }
+
+    // PayPal's Log in with PayPal guide recommends refreshing this token
+    // before requesting the user's profile.
+    const refreshRes = await fetch(`${apiBaseUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: tokenData.refresh_token,
+      }),
+    });
+
+    if (!refreshRes.ok) {
+      const errBody = await refreshRes.text();
+      logger.error("paypal.oauth.token_refresh_failed", {
+        provider: "paypal",
+        operation: "refresh_identity_token",
+        httpStatus: refreshRes.status,
+        paypalDebugId: refreshRes.headers.get("paypal-debug-id"),
+        providerError: errBody,
+      });
+      throw new ApiError(
+        502,
+        "Failed to refresh PayPal identity access token",
+        "PAYPAL_TOKEN_REFRESH_FAILED",
+        {
+          status: refreshRes.status,
+          statusText: refreshRes.statusText,
+          paypalDebugId: refreshRes.headers.get("paypal-debug-id"),
+        }
+      );
+    }
+
+    const refreshedToken = (await refreshRes.json()) as {
+      access_token: string;
+      scope?: string;
+    };
+
+    // 2. Fetch the profile using the endpoint specified by PayPal's
+    // Log in with PayPal integration guide.
     const userInfoRes = await fetch(
-      `${apiBaseUrl}/v1/identity/oauth2/userinfo?schema=paypalv1.1`,
+      `${apiBaseUrl}/v1/identity/oauth2/userinfo`,
       {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
+          Authorization: `Bearer ${refreshedToken.access_token}`,
           "Content-Type": "application/json",
         },
       }
@@ -132,11 +201,37 @@ export async function GET(req: NextRequest) {
 
     if (!userInfoRes.ok) {
       const errBody = await userInfoRes.text();
+      let paypalError: unknown = errBody || undefined;
+      if (errBody) {
+        try {
+          const parsed = JSON.parse(errBody) as Record<string, unknown>;
+          paypalError = {
+            error: parsed.error,
+            error_description: parsed.error_description,
+          };
+        } catch {
+          // Keep a short response excerpt only; never include OAuth credentials.
+          paypalError = errBody.slice(0, 300);
+        }
+      }
+      logger.error("paypal.oauth.userinfo_failed", {
+        provider: "paypal",
+        operation: "get_userinfo",
+        httpStatus: userInfoRes.status,
+        paypalDebugId: userInfoRes.headers.get("paypal-debug-id"),
+        providerError: paypalError,
+      });
       throw new ApiError(
         502,
         "Failed to fetch PayPal identity profile",
         "PAYPAL_USERINFO_FAILED",
-        errBody
+        {
+          status: userInfoRes.status,
+          statusText: userInfoRes.statusText,
+          paypalDebugId: userInfoRes.headers.get("paypal-debug-id"),
+          grantedScopes: refreshedToken.scope || tokenData.scope,
+          paypalError,
+        }
       );
     }
 
@@ -148,7 +243,10 @@ export async function GET(req: NextRequest) {
 
     const rawPayerId =
       profile.payer_id ||
-      (profile.user_id ? profile.user_id.split("/").pop() : undefined);
+      profile.account_id ||
+      ((profile.user_id || profile.sub)
+        ? (profile.user_id || profile.sub)!.split("/").pop()
+        : undefined);
 
     if (!rawPayerId || !verifiedEmail) {
       throw new ApiError(
@@ -227,8 +325,11 @@ export async function GET(req: NextRequest) {
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const returnPath = statePayload.returnTo === "paypal"
+      ? "/paypal?paypal_oauth=connected"
+      : "/parent/settings?paypal_linked=true";
     return NextResponse.redirect(
-      `${appUrl}/parent/settings?paypal_linked=true`
+      `${appUrl}${returnPath}`
     );
   } catch (error) {
     return handleRouteError(error);

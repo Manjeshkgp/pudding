@@ -16,6 +16,7 @@ import { FULL_COPARENT_PERMISSIONS } from "@/lib/auth-guard";
 
 const parentSignupSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
+  avatar: z.enum(["avatar-1", "avatar-2", "avatar-3", "avatar-4", "avatar-5", "avatar-6"]).default("avatar-1"),
   email: z.string().trim().email("Valid email address is required").toLowerCase(),
   phone: z
     .string()
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
         data: {
           familyId: family.id,
           name: input.name,
+          avatar: input.avatar,
           email: input.email,
           phone: input.phone ?? null,
           passwordHash,
@@ -153,6 +155,7 @@ export async function POST(req: NextRequest) {
         user: {
           id: result.user.id,
           name: result.user.name,
+          avatar: result.user.avatar,
           email: result.user.email,
           phone: result.user.phone,
           role: result.user.role,

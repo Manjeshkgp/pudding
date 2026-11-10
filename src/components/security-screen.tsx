@@ -13,6 +13,7 @@ import {
   SpinnerIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
+import { postApi } from "@/lib/client-api";
 
 // Parent flow, step 6: security question.
 // States from Figma: idle, question list open, answer focused (header
@@ -47,6 +48,7 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
   const [answer, setAnswer] = useState("");
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   // The graphic only takes up space once its file exists
   const [graphic, setGraphic] = useState(false);
   const { open, offset } = useKeyboard(answerRef);
@@ -64,17 +66,33 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
   const valid = answer.trim().length > 0;
   const onKeyboard = focused && open;
 
-  function submit() {
+  async function submit() {
     if (loading || !valid) return;
     setLoading(true);
-    if (step === 1) {
-      // Remember the first pick, then open the second question
-      try {
-        sessionStorage.setItem("pudding-question-1", question);
-      } catch {}
-      window.setTimeout(() => router.push("/security-2"), 1500);
-    } else {
-      window.setTimeout(() => router.push("/profile"), 1500);
+    setError("");
+    const questionKey = `security-${question
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "")}`;
+    try {
+      await postApi("/api/auth/parent/signup/security-questions", {
+        questionKey,
+        questionText: question,
+        answer: answer.trim(),
+      });
+      if (step === 1) {
+        try {
+          sessionStorage.setItem("pudding-question-1", question);
+        } catch {}
+        router.push("/security-2");
+      } else {
+        router.push("/profile");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save answer.");
+      setLoading(false);
     }
   }
 
@@ -171,6 +189,8 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
             </motion.p>
           </motion.div>
         </div>
+
+        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
 
         <form
           className="flex flex-col gap-6 px-4"

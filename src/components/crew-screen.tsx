@@ -4,12 +4,19 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
-import { KIDS, ageText } from "@/components/crew-data";
+import { getApi } from "@/lib/client-api";
 
-// Review list shown after Continue on Add kid. Sample data only.
+type ChildSummary = {
+  id: string;
+  name: string;
+  age: number;
+  avatar: string;
+};
 
 export default function CrewScreen() {
   const [me, setMe] = useState(0);
+  const [children, setChildren] = useState<ChildSummary[]>([]);
+  const [error, setError] = useState("");
 
   // The picture picked on the profile screen
   useEffect(() => {
@@ -17,6 +24,20 @@ export default function CrewScreen() {
       const saved = Number(sessionStorage.getItem("pudding-avatar"));
       if (Number.isInteger(saved) && saved >= 0 && saved < AVATARS.length) setMe(saved);
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getApi<{ children: ChildSummary[] }>("/api/children")
+      .then((result) => {
+        if (active) setChildren(result.children);
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Unable to load children.");
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -51,34 +72,39 @@ export default function CrewScreen() {
       </div>
 
       <ul className="flex flex-col gap-4 px-4 pb-[200px]">
-        {KIDS.map((k, i) => (
+        {error && <li role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</li>}
+        {children.map((kid) => {
+          const avatarIndex = Number(kid.avatar.replace("avatar-", "")) - 1;
+          const safeAvatar = Number.isInteger(avatarIndex) && avatarIndex >= 0 && avatarIndex < AVATARS.length ? avatarIndex : 0;
+          return (
           <li
-            key={k.first}
+            key={kid.id}
             className="flex items-center gap-3 rounded-3xl border border-[#e8e8e8] px-5 py-3.5"
           >
             <span
               className="size-[52px] shrink-0 overflow-hidden rounded-full"
-              style={{ backgroundColor: AVATARS[k.avatar].bg }}
+              style={{ backgroundColor: AVATARS[safeAvatar].bg }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={AVATARS[k.avatar].src} alt="" className="size-full" />
+              <img src={AVATARS[safeAvatar].src} alt="" className="size-full" />
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="truncate text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">
-                {k.first} {k.last}
+                {kid.name}
               </span>
               <span className="text-[15px] leading-[22px] tracking-[-0.15px] text-[#4b4b4b]">
-                {ageText(k.dob)}
+                {kid.age} years
               </span>
             </span>
             <Link
-              href={`/crew/${i}`}
+              href={`/crew/${kid.id}`}
               className="rounded-full bg-[#f3f3f3] px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black transition-colors active:bg-[#e8e8e8]"
             >
               Edit
             </Link>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
       <div className="fixed inset-x-0 bottom-0 z-10 flex flex-col gap-2.5 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">

@@ -26,17 +26,25 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params;
-    const { user, family } = await requireParent(req);
+    const { user, family } = await requireParent(req, "canManageChildren");
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, resetPinSchema);
 
     const child = await prisma.child.findUnique({
       where: { id },
-      select: { id: true, name: true, familyId: true },
+      select: { id: true, name: true, familyId: true, pinHash: true },
     });
 
     if (!child || child.familyId !== family.id) {
       throw new ApiError(404, "Child not found in your family", "CHILD_NOT_FOUND");
+    }
+
+    if (!user.paypalIsVerified) {
+      throw new ApiError(
+        403,
+        "Connect and verify PayPal before setting or resetting a child's PIN",
+        "PAYPAL_VERIFICATION_REQUIRED"
+      );
     }
 
     const pinHash = await bcrypt.hash(input.newPin, 10);
@@ -54,7 +62,7 @@ export async function POST(
       familyId: family.id,
       actorUserId: user.id,
       actorRole: user.role,
-      action: "CHILD_PIN_RESET",
+      action: child.pinHash ? "CHILD_PIN_RESET" : "CHILD_PIN_SET",
       targetType: "Child",
       targetId: child.id,
       details: { childName: child.name },
@@ -63,9 +71,11 @@ export async function POST(
     });
 
     return apiSuccess(
-      { childId: child.id, unlocked: true },
+      { childId: child.id, pinSet: true, canLogin: true, unlocked: true },
       200,
-      `PIN for ${child.name} has been reset and unlocked`
+      child.pinHash
+        ? `PIN for ${child.name} has been reset and unlocked`
+        : `PIN created for ${child.name}; they can now log in`
     );
   } catch (error) {
     return handleRouteError(error);

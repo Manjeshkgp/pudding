@@ -31,12 +31,18 @@ export function generateStaticParams() {
 
 export default async function LegalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
 }) {
   const { slug } = await params;
+  const { returnTo } = await searchParams;
   const doc = DOCS[slug];
   if (!doc) notFound();
+
+  // Only accept known in-app destinations so a crafted query cannot create an open redirect.
+  const backHref = ["/setup", "/plan"].includes(returnTo ?? "") ? returnTo! : "/setup";
 
   return (
     <LegalDoc
@@ -44,7 +50,7 @@ export default async function LegalPage({
       label={doc.label}
       date="6 November 2026"
       paragraphs={BODY}
-      backHref="/setup"
+      backHref={backHref}
     />
   );
 }

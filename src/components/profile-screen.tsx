@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import HelpLink from "@/components/help-link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -14,11 +14,11 @@ import {
 } from "@/components/icons";
 import AvatarSheet, { AVATARS } from "@/components/avatar-sheet";
 import { useKeyboard } from "@/components/use-keyboard";
+import { getApi, patchApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 8: your profile.
 // States from Figma: idle, avatar list open, name focused (header shrinks),
 // name typed (Continue turns black) and loading after Continue.
-// Sample data only: nothing is saved.
 const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 
 const circle =
@@ -30,21 +30,61 @@ export default function ProfileScreen() {
   const [name, setName] = useState("");
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [avatar, setAvatar] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [existingProfile, setExistingProfile] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const { open, offset } = useKeyboard(nameRef);
+
+  useEffect(() => {
+    let active = true;
+    getApi<{ subjectType: string; user?: { name: string; avatar: string } }>("/api/auth/me")
+      .then(({ subjectType, user }) => {
+        if (!active || subjectType !== "USER" || !user) return;
+        setName(user.name);
+        const avatarIndex = Number(user.avatar.replace("avatar-", "")) - 1;
+        if (Number.isInteger(avatarIndex) && AVATARS[avatarIndex]) setAvatar(avatarIndex);
+        setExistingProfile(true);
+      })
+      .catch(() => {
+        // New signups have no session until profile completion.
+      })
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const valid = name.trim().length > 0;
   const onKeyboard = focused && open;
 
-  function submit() {
-    if (loading || !valid) return;
+  async function submit() {
+    if (loading || loadingProfile || !valid) return;
     setLoading(true);
-    // The next screen shows the picture picked here
+    setError("");
+    const avatarId = `avatar-${avatar + 1}`;
     try {
-      sessionStorage.setItem("pudding-avatar", String(avatar));
-    } catch {}
-    window.setTimeout(() => router.push("/add-kid"), 1500);
+      const profile = {
+        name: name.trim(),
+        avatar: avatarId,
+      };
+      if (existingProfile) {
+        await patchApi("/api/auth/me", profile);
+      } else {
+        await postApi("/api/auth/parent/signup/complete", profile);
+      }
+      setExistingProfile(true);
+      try {
+        sessionStorage.setItem("pudding-avatar", String(avatar));
+      } catch {}
+      router.push("/add-kid");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create your account.");
+      setLoading(false);
+    }
   }
 
   const barText =
@@ -119,6 +159,8 @@ export default function ProfileScreen() {
             </motion.p>
           </motion.div>
         </div>
+
+        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
 
         <form
           className="flex flex-col gap-6 px-4"
@@ -197,7 +239,7 @@ export default function ProfileScreen() {
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={submit}
-            disabled={!valid && !loading}
+            disabled={!valid || loadingProfile || loading}
             aria-busy={loading}
             className={`flex h-[52px] w-full items-center justify-center px-5 py-3.5 ${barText} ${barColor}`}
           >
@@ -210,7 +252,7 @@ export default function ProfileScreen() {
           <button
             type="button"
             onClick={submit}
-            disabled={!valid && !loading}
+            disabled={!valid || loadingProfile || loading}
             aria-busy={loading}
             className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 ${barText} ${barColor}`}
           >

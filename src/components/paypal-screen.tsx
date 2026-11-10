@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
 import PaypalMark from "@/components/paypal-mark";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Connect PayPal, shown after "Start 30-days free trail". Sample data only: nothing is connected.
 function UserFilled() {
@@ -52,14 +54,71 @@ const STEPS = [
 ];
 
 export default function PaypalScreen() {
+  const router = useRouter();
   const [me, setMe] = useState(0);
+  const [paypalVerified, setPaypalVerified] = useState(false);
+  const [vaultConnected, setVaultConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     try {
       const i = Number(sessionStorage.getItem("pudding-avatar"));
       if (Number.isInteger(i) && AVATARS[i]) setMe(i);
     } catch {}
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("paypal_oauth") === "connected") {
+      setMessage("PayPal account linked. Continue to approve saving the wallet.");
+    } else if (params.get("paypal_vault") === "connected") {
+      setMessage("Your PayPal wallet is connected and ready for the demo.");
+    } else if (params.get("paypal_vault") === "cancelled") {
+      setMessage("PayPal wallet setup was cancelled. You can try again when ready.");
+    } else if (params.get("paypal_vault") === "error") {
+      setError("PayPal could not finish connecting the wallet. Please try again.");
+    }
+
+    let active = true;
+    getApi<{ subjectType: string; user?: { paypalIsVerified: boolean; paypalVaultConnected: boolean } }>("/api/auth/me")
+      .then(({ subjectType, user }) => {
+        if (!active || subjectType !== "USER" || !user) return;
+        setPaypalVerified(user.paypalIsVerified);
+        setVaultConnected(user.paypalVaultConnected);
+      })
+      .catch(() => {
+        if (active) setError("Sign in to your Pudding parent account before connecting PayPal.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  async function connectPayPal() {
+    if (loading || connecting) return;
+    setError("");
+    if (vaultConnected) {
+      router.push("/done");
+      return;
+    }
+    if (!paypalVerified) {
+      window.location.assign("/api/auth/paypal/connect?returnTo=paypal");
+      return;
+    }
+
+    setConnecting(true);
+    try {
+      const result = await postApi<{ approvalUrl: string }>("/api/auth/paypal/vault/setup", {});
+      window.location.assign(result.approvalUrl);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to start PayPal wallet setup.");
+      setConnecting(false);
+    }
+  }
 
   return (
     <main className="min-h-dvh bg-white">
@@ -116,16 +175,21 @@ export default function PaypalScreen() {
             </li>
           ))}
         </ul>
+        {message && <p role="status" className="mx-4 rounded-lg bg-[#eff4fe] px-3 py-2 text-sm text-black">{message}</p>}
+        {error && <p role="alert" className="mx-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
         <div className="rounded-3xl bg-[#f3f3f3]">
-          <Link
-            href="/connecting"
-            className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
+          <button
+            type="button"
+            onClick={connectPayPal}
+            disabled={loading || connecting}
+            aria-busy={loading || connecting}
+            className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white disabled:opacity-60"
           >
-            Connect
-          </Link>
+            {loading || connecting ? "Connecting…" : vaultConnected ? "Continue" : paypalVerified ? "Save PayPal wallet" : "Connect PayPal"}
+          </button>
         </div>
       </div>
     </main>

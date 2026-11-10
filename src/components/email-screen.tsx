@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/top-bar";
 import { CloseCircleFilledIcon, SpinnerIcon } from "@/components/icons";
+import { postApi } from "@/lib/client-api";
 
 // Parent flow, step 3: email.
 // States from Figma: empty and idle, focused and empty, typing,
@@ -14,6 +15,7 @@ export default function EmailScreen() {
   const [email, setEmail] = useState("");
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   // Is the phone keyboard open, and how far up the bottom bar must sit.
   // The offset is 0 when the browser already shrinks the page above the keyboard.
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -73,17 +75,28 @@ export default function EmailScreen() {
   }, []);
 
   // Show the loading state briefly, then open the verification screen
-  function submit() {
+  async function submit() {
     if (loading || !valid) return;
     setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      // Remember the email so the next screen can show it
+    setError("");
+    try {
+      const result = await postApi<{ email: string; devOtpCode?: string }>(
+        "/api/auth/parent/signup/start",
+        { email: email.trim() },
+      );
       try {
-        sessionStorage.setItem("pudding-email", email.trim());
+        sessionStorage.setItem("pudding-email", result.email);
+        if (result.devOtpCode) {
+          sessionStorage.setItem("pudding-dev-otp", result.devOtpCode);
+        } else {
+          sessionStorage.removeItem("pudding-dev-otp");
+        }
       } catch {}
       router.push("/verify");
-    }, 1500);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to start signup.");
+      setLoading(false);
+    }
   }
 
   return (
@@ -99,6 +112,8 @@ export default function EmailScreen() {
             Your kids&apos;s next adventure starts here.
           </p>
         </header>
+
+        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
 
         <form
           className="flex flex-col gap-2 px-4"

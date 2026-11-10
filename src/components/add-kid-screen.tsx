@@ -15,11 +15,11 @@ import {
 import { useKeyboard } from "@/components/use-keyboard";
 import { AVATARS } from "@/components/avatar-sheet";
 import DatePickerSheet from "@/components/date-picker-sheet";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 9: add kid.
 // States from Figma: idle, first / last name focused (header shrinks), date
 // picker (calendar and year list), filled (buttons turn on) and loading.
-// Sample data only: nothing is saved.
 const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 
 const circle =
@@ -36,6 +36,11 @@ function format(d: Date) {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`;
 }
 
+function formatApiDate(d: Date) {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export default function AddKidScreen() {
   const lastRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
@@ -48,9 +53,28 @@ export default function AddKidScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [avatar, setAvatar] = useState(0);
-  const [second, setSecond] = useState(false);
-  const [toast, setToast] = useState(false);
+  const [savedChildrenCount, setSavedChildrenCount] = useState(0);
+  const [checkingChildren, setCheckingChildren] = useState(true);
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
   const { open } = useKeyboard(activeRef);
+
+  useEffect(() => {
+    let active = true;
+    getApi<{ children: { id: string }[] }>("/api/children")
+      .then(({ children }) => {
+        if (active) setSavedChildrenCount(children.length);
+      })
+      .catch(() => {
+        // The initial signup flow reaches this screen only after creating a parent session.
+      })
+      .finally(() => {
+        if (active) setCheckingChildren(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // When the keyboard is dismissed (back gesture), drop focus so the header and buttons return
   useEffect(() => {
@@ -63,7 +87,7 @@ export default function AddKidScreen() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(false), 3000);
+    const t = window.setTimeout(() => setToast(""), 3000);
     return () => window.clearTimeout(t);
   }, [toast]);
 
@@ -88,19 +112,37 @@ export default function AddKidScreen() {
   const focused = focus !== null;
   const valid = first.trim() !== "" && last.trim() !== "" && dob !== null;
 
-  function submit() {
-    if (loading || !valid) return;
+  async function saveChild() {
+    if (loading || !valid || !dob) return false;
     setLoading(true);
-    window.setTimeout(() => router.push("/crew"), 1500);
+    setError("");
+    try {
+      await postApi("/api/children", {
+        firstName: first.trim(),
+        lastName: last.trim(),
+        dateOfBirth: formatApiDate(dob),
+        consentAccepted: true,
+      });
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to add this child.");
+      setLoading(false);
+      return false;
+    }
   }
 
-  function addAnother() {
-    if (loading || !valid) return;
+  async function submit() {
+    if (await saveChild()) router.push("/crew");
+  }
+
+  async function addAnother() {
+    if (!(await saveChild())) return;
     setFirst("");
     setLast("");
     setDob(null);
-    setSecond(true);
-    setToast(true);
+    setSavedChildrenCount((count) => count + 1);
+    setToast("Child added successfully.");
+    setLoading(false);
   }
 
   const fields: {
@@ -163,7 +205,7 @@ export default function AddKidScreen() {
                   transition={{ delay: 0.25, duration: 0.3, ease: "easeOut" }}
                   className="overflow-hidden whitespace-nowrap"
                 >
-                  <span className="block pl-2">First kid added successfully.</span>
+                  <span className="block pl-2">{toast}</span>
                 </motion.div>
               </motion.div>
             </div>
@@ -215,7 +257,11 @@ export default function AddKidScreen() {
                 }}
                 transition={ease}
               >
-                {second ? "Add second kid" : "Add kid"}
+                {savedChildrenCount === 0
+                  ? "Add kid"
+                  : savedChildrenCount === 1
+                    ? "Add second kid"
+                    : `Add kid ${savedChildrenCount + 1}`}
               </motion.h1>
             </motion.div>
             <motion.p
@@ -233,6 +279,8 @@ export default function AddKidScreen() {
             </motion.p>
           </motion.div>
         </div>
+
+        {error && <p role="alert" className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         <form
           className="flex flex-col gap-6 px-4"
@@ -325,7 +373,7 @@ export default function AddKidScreen() {
           </div>
 
           {/* Sibling discount note, first kid only */}
-          {!second && (
+          {savedChildrenCount === 0 && (
           <div className="flex items-start gap-3 rounded-lg bg-[#eff4fe] p-4">
             <GiftIcon className="size-5 shrink-0 text-black" />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-[15px] tracking-[-0.15px] text-black">
@@ -343,12 +391,22 @@ export default function AddKidScreen() {
       {/* Add another and Continue sit at the bottom; hidden while typing so the keyboard never pushes them over the fields */}
       {!focused && (
         <div className="fixed inset-x-0 bottom-0 z-10 flex flex-col gap-2.5 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
+          {savedChildrenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => router.push("/crew")}
+              disabled={loading || checkingChildren}
+              className={`h-10 w-full ${barText} text-[#276ef1]`}
+            >
+              Skip
+            </button>
+          )}
           <button
             type="button"
             onClick={addAnother}
-            disabled={!valid || loading}
+            disabled={!valid || loading || checkingChildren}
             className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 ${barText} ${
-              valid && !loading
+              valid && !loading && !checkingChildren
                 ? "bg-[#e8e8e8] text-black"
                 : "bg-[#f3f3f3] text-[#a6a6a6]"
             }`}
@@ -358,7 +416,7 @@ export default function AddKidScreen() {
           <button
             type="button"
             onClick={submit}
-            disabled={!valid && !loading}
+            disabled={!valid || loading || checkingChildren}
             aria-busy={loading}
             className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 ${barText} ${continueColor}`}
           >

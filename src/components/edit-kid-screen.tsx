@@ -13,9 +13,9 @@ import {
 import { useKeyboard } from "@/components/use-keyboard";
 import AvatarSheet, { AVATARS } from "@/components/avatar-sheet";
 import DatePickerSheet from "@/components/date-picker-sheet";
-import { KIDS } from "@/components/crew-data";
+import { getApi, patchApi } from "@/lib/client-api";
 
-// Edit a kid from the crew list. Sample data only: nothing is saved.
+// Edit a child profile from the parent crew list.
 // While a name field is focused the big heading shrinks up into the top row.
 const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 
@@ -26,29 +26,65 @@ const fieldText = "text-[17px] leading-[25px] tracking-[-0.17px]";
 
 type FieldName = "first" | "last";
 
-function format(d: Date) {
+function format(d: Date | null) {
+  if (!d) return "MM/DD/YYYY";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`;
 }
 
-export default function EditKidScreen({ index }: { index: number }) {
-  const kid = KIDS[index];
+export default function EditKidScreen({ childId }: { childId: string }) {
   const router = useRouter();
   const lastRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
   const wasOpen = useRef(false);
-  const [first, setFirst] = useState(kid.first);
-  const [last, setLast] = useState(kid.last);
-  const [dob, setDob] = useState<Date>(kid.dob);
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [dob, setDob] = useState<Date | null>(null);
   const [focus, setFocus] = useState<FieldName | null>(null);
   const [calendar, setCalendar] = useState(false);
-  const [avatar, setAvatar] = useState(kid.avatar);
+  const [avatar, setAvatar] = useState(0);
   const [picker, setPicker] = useState(false);
   const [me, setMe] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState("");
   const { open } = useKeyboard(activeRef);
 
   const focused = focus !== null;
-  const title = `Your ${kid.label} kid`;
+  const title = first ? `${first}'s profile` : "Your kid";
+
+  useEffect(() => {
+    let active = true;
+    getApi<{
+      name: string;
+      firstName?: string | null;
+      lastName?: string | null;
+      dateOfBirth: string | null;
+      avatar: string;
+    }>(`/api/children/${encodeURIComponent(childId)}`)
+      .then((child) => {
+        if (!active) return;
+        const nameParts = child.name.trim().split(/\s+/);
+        setFirst(child.firstName || nameParts[0] || "");
+        setLast(child.lastName ?? nameParts.slice(1).join(" "));
+        if (child.dateOfBirth) {
+          const [y, m, d] = child.dateOfBirth.split("-").map(Number);
+          setDob(new Date(y, m - 1, d));
+        }
+        const avatarNumber = Number(child.avatar.replace("avatar-", "")) - 1;
+        setAvatar(Number.isInteger(avatarNumber) && avatarNumber >= 0 && avatarNumber < AVATARS.length ? avatarNumber : 0);
+        setLoaded(true);
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(cause instanceof Error ? cause.message : "Unable to load child profile.");
+          setLoaded(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [childId]);
 
   // Keyboard dismissed: drop focus so the header and button come back
   useEffect(() => {
@@ -80,6 +116,25 @@ export default function EditKidScreen({ index }: { index: number }) {
     { name: "first" as const, title: "First name", value: first, set: setFirst, ref: undefined },
     { name: "last" as const, title: "Last name", value: last, set: setLast, ref: lastRef },
   ];
+
+  async function save() {
+    if (loading || !loaded || !first.trim() || !last.trim() || !dob) return;
+    setLoading(true);
+    setError("");
+    const p = (n: number) => String(n).padStart(2, "0");
+    try {
+      await patchApi(`/api/children/${encodeURIComponent(childId)}`, {
+        firstName: first.trim(),
+        lastName: last.trim(),
+        dateOfBirth: `${dob.getFullYear()}-${p(dob.getMonth() + 1)}-${p(dob.getDate())}`,
+        avatar: `avatar-${avatar + 1}`,
+      });
+      router.push("/crew");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save child profile.");
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-dvh bg-white">
@@ -142,6 +197,8 @@ export default function EditKidScreen({ index }: { index: number }) {
         </motion.div>
       </div>
 
+      {error && <p role="alert" className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
       <div className="flex flex-col gap-6 pb-[140px]">
         {/* Picture with the pencil badge opens the avatar sheet */}
         <div className="px-4">
@@ -171,7 +228,7 @@ export default function EditKidScreen({ index }: { index: number }) {
           className="flex flex-col gap-6 px-4"
           onSubmit={(e) => {
             e.preventDefault();
-            router.push("/crew");
+            void save();
           }}
         >
           {fields.map((f) => {
@@ -254,7 +311,8 @@ export default function EditKidScreen({ index }: { index: number }) {
         <div className="fixed inset-x-0 bottom-0 z-10 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
           <button
             type="button"
-            onClick={() => router.push("/crew")}
+            onClick={() => void save()}
+            disabled={loading || !loaded || !first.trim() || !last.trim() || !dob}
             className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
           >
             Save changes

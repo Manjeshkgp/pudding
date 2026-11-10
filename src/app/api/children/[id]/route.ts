@@ -13,12 +13,22 @@ import {
   requireParent,
 } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
-import { childUsernameSchema } from "@/lib/child-credentials";
+import {
+  calculateChildAge,
+  childUsernameSchema,
+  parseChildBirthDate,
+} from "@/lib/child-credentials";
 
 const updateChildSchema = z.object({
+  firstName: z.string().trim().min(1).max(40).optional(),
+  lastName: z.string().trim().min(1).max(40).optional(),
   name: z.string().trim().min(1).max(80).optional(),
   username: childUsernameSchema.optional(),
-  age: z.number().int().min(6).max(17).optional(),
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => parseChildBirthDate(value) !== null, "Enter a valid date of birth")
+    .optional(),
   avatar: z.string().trim().max(100).optional(),
   theme: z.string().trim().max(50).optional(),
   isFrozen: z.boolean().optional(),
@@ -69,8 +79,14 @@ export async function GET(
     return apiSuccess({
       id: fullChild.id,
       name: fullChild.name,
+      firstName: fullChild.firstName,
+      lastName: fullChild.lastName,
       username: fullChild.username,
+      dateOfBirth: isParent
+        ? fullChild.dateOfBirth?.toISOString().slice(0, 10) ?? null
+        : undefined,
       age: fullChild.age,
+      ...(isParent ? { pinSet: Boolean(fullChild.pinHash), canLogin: Boolean(fullChild.pinHash) } : {}),
       avatar: fullChild.avatar,
       theme: fullChild.theme,
       isFrozen: fullChild.isFrozen,
@@ -143,11 +159,43 @@ export async function PATCH(
       }
     }
 
+    const updatedBirthDate = input.dateOfBirth
+      ? parseChildBirthDate(input.dateOfBirth)
+      : undefined;
+    if (updatedBirthDate) {
+      const updatedAge = calculateChildAge(updatedBirthDate);
+      if (updatedAge < 6 || updatedAge > 18) {
+        throw new ApiError(400, "Child must be 6 to 18 years old", "INVALID_CHILD_AGE");
+      }
+    }
+    if (Boolean(input.firstName) !== Boolean(input.lastName)) {
+      throw new ApiError(400, "Enter both first and last name", "INVALID_CHILD_NAME");
+    }
+    const updatedName = input.firstName && input.lastName
+      ? `${input.firstName} ${input.lastName}`
+      : input.name;
+    const nameParts = updatedName?.trim().split(/\s+/) ?? [];
+
     const updateData: Prisma.ChildUpdateInput = isParent
       ? {
-          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(updatedName !== undefined ? { name: updatedName } : {}),
+          ...(input.firstName !== undefined
+            ? { firstName: input.firstName }
+            : input.name !== undefined
+              ? { firstName: nameParts[0] ?? "" }
+              : {}),
+          ...(input.lastName !== undefined
+            ? { lastName: input.lastName }
+            : input.name !== undefined
+              ? { lastName: nameParts.slice(1).join(" ") }
+              : {}),
           ...(input.username !== undefined ? { username: input.username } : {}),
-          ...(input.age !== undefined ? { age: input.age } : {}),
+          ...(input.dateOfBirth !== undefined
+            ? {
+                dateOfBirth: updatedBirthDate,
+                age: calculateChildAge(updatedBirthDate!),
+              }
+            : {}),
           ...(input.avatar !== undefined ? { avatar: input.avatar } : {}),
           ...(input.theme !== undefined ? { theme: input.theme } : {}),
           ...(input.isFrozen !== undefined ? { isFrozen: input.isFrozen } : {}),
@@ -181,7 +229,27 @@ export async function PATCH(
       userAgent,
     });
 
-    return apiSuccess(updatedChild, 200, "Child profile updated");
+    return apiSuccess(
+      {
+        id: updatedChild.id,
+        name: updatedChild.name,
+        firstName: updatedChild.firstName,
+        lastName: updatedChild.lastName,
+        username: updatedChild.username,
+        dateOfBirth: isParent
+          ? updatedChild.dateOfBirth?.toISOString().slice(0, 10) ?? null
+          : undefined,
+        age: updatedChild.age,
+        avatar: updatedChild.avatar,
+        theme: updatedChild.theme,
+        isFrozen: updatedChild.isFrozen,
+        quietHoursStart: updatedChild.quietHoursStart,
+        quietHoursEnd: updatedChild.quietHoursEnd,
+        ...(isParent ? { pinSet: Boolean(updatedChild.pinHash), canLogin: Boolean(updatedChild.pinHash) } : {}),
+      },
+      200,
+      "Child profile updated"
+    );
   } catch (error) {
     return handleRouteError(error);
   }

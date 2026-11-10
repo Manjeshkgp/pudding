@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { PushPlatform, PushSubscription } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 export interface PushMessagePayload {
   title: string;
@@ -39,7 +40,7 @@ function ensureWebVapidConfigured(): boolean {
     vapidConfigured = true;
     return true;
   } catch (err) {
-    console.warn("[PushService:VAPID_INIT_WARN]", err);
+    logger.warn("push.vapid_configuration_failed", { provider: "web_vapid" }, err);
     return false;
   }
 }
@@ -57,9 +58,9 @@ async function sendWebVapidNotification(
   }
 
   if (!ensureWebVapidConfigured()) {
-    console.info("[PushService:WEB_VAPID_MOCK]", {
-      endpoint: sub.endpoint,
-      title: payload.title,
+    logger.info("push.mock_dispatch", {
+      provider: "web_vapid",
+      outcome: "not_sent_missing_configuration",
     });
     return false;
   }
@@ -91,6 +92,11 @@ async function sendWebVapidNotification(
         })
         .catch(() => null);
     }
+    logger.warn("push.web_vapid_delivery_failed", {
+      provider: "web_vapid",
+      httpStatus: statusCode,
+      subscriptionExpired: statusCode === 404 || statusCode === 410,
+    }, err);
     return false;
   }
 }
@@ -108,10 +114,10 @@ async function sendMobilePushNotification(
     return false;
   }
 
-  console.info(`[PushService:${sub.platform}_ADAPTER]`, {
-    deviceToken: sub.deviceToken,
-    deviceName: sub.deviceName,
-    title: payload.title,
+  logger.info("push.native_adapter_mock", {
+    provider: sub.platform,
+    outcome: "not_sent",
+    recipientPresent: Boolean(sub.deviceToken),
   });
   return true;
 }

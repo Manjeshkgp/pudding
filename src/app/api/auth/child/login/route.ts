@@ -76,6 +76,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!child.pinHash) {
+      throw new ApiError(
+        403,
+        "Your parent needs to connect PayPal and create your PIN before you can log in.",
+        "CHILD_PIN_NOT_SET"
+      );
+    }
+
     const now = new Date();
     if (child.pinLockedUntil && child.pinLockedUntil > now) {
       const remainingSeconds = Math.ceil(

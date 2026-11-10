@@ -186,8 +186,8 @@ export default function PlanScreen() {
         </div>
 
         <div className="flex items-center justify-center gap-4 text-[13px] leading-[18px] tracking-[-0.13px] text-black underline">
-          <Link href="/legal/terms">Terms of Use</Link>
-          <Link href="/legal/privacy">Privacy Policy</Link>
+          <Link href="/legal/terms?returnTo=%2Fplan">Terms of Use</Link>
+          <Link href="/legal/privacy?returnTo=%2Fplan">Privacy Policy</Link>
         </div>
       </div>
 

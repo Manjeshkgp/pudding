@@ -10,6 +10,7 @@ import {
   TickCircleIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
+import { postApi } from "@/lib/client-api";
 
 // Parent flow, step 5: set a password.
 // States from Figma: empty (idle and focused), typing with the password
@@ -24,16 +25,23 @@ export default function PasswordScreen() {
   const [shown, setShown] = useState(false);
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const { open, offset } = useKeyboard(inputRef);
 
   const valid = password.length >= MIN_LENGTH;
   const onKeyboard = focused && open;
 
-  function submit() {
+  async function submit() {
     if (loading || !valid) return;
-    // Show the spinner for a moment, then open the security question
     setLoading(true);
-    window.setTimeout(() => router.push("/notifications"), 1500);
+    setError("");
+    try {
+      await postApi("/api/auth/parent/signup/password", { password });
+      router.push("/notifications");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save password.");
+      setLoading(false);
+    }
   }
 
   const barText =
@@ -55,6 +63,8 @@ export default function PasswordScreen() {
             Set a password to keep your account secure.
           </p>
         </header>
+
+        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
 
         <form
           className="flex flex-col gap-2 px-4"

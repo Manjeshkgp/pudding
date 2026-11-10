@@ -1,7 +1,14 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import prisma from "@/lib/prisma";
-import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
-import { requireAuth } from "@/lib/auth-guard";
+import { ApiError, apiSuccess, handleRouteError, validateBody } from "@/lib/api-response";
+import { requireAuth, requireParent } from "@/lib/auth-guard";
+import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+
+const updateParentProfileSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  avatar: z.enum(["avatar-1", "avatar-2", "avatar-3", "avatar-4", "avatar-5", "avatar-6"]),
+});
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +50,7 @@ export async function GET(req: NextRequest) {
         user: {
           id: user.id,
           name: user.name,
+          avatar: user.avatar,
           email: user.email,
           phone: user.phone,
           role: user.role,
@@ -54,6 +62,7 @@ export async function GET(req: NextRequest) {
           paypalVerifiedEmail: user.paypalVerifiedEmail,
           paypalIsVerified: user.paypalIsVerified,
           paypalLinkedAt: user.paypalLinkedAt,
+          paypalVaultConnected: Boolean(user.paypalVaultId),
           mfaEnabled: user.mfaEnabled,
           notificationPreference: user.notificationPreference,
         },
@@ -152,6 +161,42 @@ export async function GET(req: NextRequest) {
         siblingLeaderboardEnabled: child.family.siblingLeaderboardEnabled,
       },
     });
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
+
+/** Updates the signed-in parent profile during onboarding resumption. */
+export async function PATCH(req: NextRequest) {
+  try {
+    const { user } = await requireParent(req);
+    const input = await validateBody(req, updateParentProfileSchema);
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { name: input.name, avatar: input.avatar },
+      select: {
+        id: true,
+        name: true,
+        avatar: true,
+        email: true,
+        role: true,
+        permissionLevel: true,
+      },
+    });
+    const { ipAddress, userAgent } = getRequestMeta(req);
+    await writeAuditLog({
+      familyId: user.familyId,
+      actorUserId: user.id,
+      actorRole: user.role,
+      action: "PARENT_PROFILE_UPDATED",
+      targetType: "User",
+      targetId: user.id,
+      details: { name: updated.name, avatar: updated.avatar },
+      ipAddress,
+      userAgent,
+    });
+
+    return apiSuccess({ user: updated }, 200, "Profile updated successfully");
   } catch (error) {
     return handleRouteError(error);
   }

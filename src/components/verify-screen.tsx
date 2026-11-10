@@ -11,14 +11,12 @@ import {
   TickCircleIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
+import { postApi } from "@/lib/client-api";
 
 // Parent flow, step 4: email verification.
 // States from Figma: empty, code entered, invalid code, resend active,
-// code resent, and loading after Verify. Sample data only: the only
-// code that works is 123456; any other code shows "Invalid code".
-const SAMPLE_EMAIL = "parent.pudding@gmail.com";
+// code resent, and loading after Verify.
 const WAIT_SECONDS = 29;
-const SAMPLE_CODE = "123456";
 
 type Toast = { id: number; kind: "error" | "success"; text: string } | null;
 
@@ -31,7 +29,8 @@ export default function VerifyScreen() {
   const [invalid, setInvalid] = useState(false);
   const [seconds, setSeconds] = useState(WAIT_SECONDS);
   const [toast, setToast] = useState<Toast>(null);
-  const [email, setEmail] = useState(SAMPLE_EMAIL);
+  const [email, setEmail] = useState("");
+  const [devOtp, setDevOtp] = useState("");
   const { open, offset } = useKeyboard(inputRef);
 
   const complete = code.length === 6;
@@ -42,6 +41,7 @@ export default function VerifyScreen() {
     try {
       const saved = sessionStorage.getItem("pudding-email");
       if (saved) setEmail(saved);
+      setDevOtp(sessionStorage.getItem("pudding-dev-otp") || "");
     } catch {}
   }, []);
 
@@ -59,25 +59,44 @@ export default function VerifyScreen() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  function submit() {
+  async function submit() {
     if (loading || !complete) return;
     setLoading(true);
-    window.setTimeout(() => {
-      if (code === SAMPLE_CODE) {
-        // Correct code: keep the spinner while the next screen opens
-        router.push("/password");
-        return;
-      }
+    try {
+      await postApi("/api/auth/parent/signup/verify", { code });
+      router.push("/password");
+    } catch (cause) {
       setLoading(false);
       setInvalid(true);
-      setToast({ id: Date.now(), kind: "error", text: "Invalid code" });
-    }, 1500);
+      setToast({
+        id: Date.now(),
+        kind: "error",
+        text: cause instanceof Error ? cause.message : "Invalid code",
+      });
+    }
   }
 
-  function resend() {
+  async function resend() {
     if (seconds > 0) return;
-    setSeconds(WAIT_SECONDS);
-    setToast({ id: Date.now(), kind: "success", text: "Code has been sent." });
+    try {
+      const result = await postApi<{ devOtpCode?: string }>(
+        "/api/auth/parent/signup/start",
+        { email },
+      );
+      setDevOtp(result.devOtpCode || "");
+      try {
+        if (result.devOtpCode) sessionStorage.setItem("pudding-dev-otp", result.devOtpCode);
+        else sessionStorage.removeItem("pudding-dev-otp");
+      } catch {}
+      setSeconds(WAIT_SECONDS);
+      setToast({ id: Date.now(), kind: "success", text: "Code has been sent." });
+    } catch (cause) {
+      setToast({
+        id: Date.now(),
+        kind: "error",
+        text: cause instanceof Error ? cause.message : "Unable to resend code",
+      });
+    }
   }
 
   function change(value: string) {
@@ -147,6 +166,12 @@ export default function VerifyScreen() {
             {email}
           </p>
         </header>
+
+        {devOtp && (
+          <p className="mx-4 mb-4 rounded-lg bg-[#fff6d8] px-3 py-2 text-sm text-black" role="status">
+            Development verification code: <strong>{devOtp}</strong>
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-2 px-4"

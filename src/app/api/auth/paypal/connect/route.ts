@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
       userId: user.id,
       familyId: family.id,
       purpose: "PAYPAL_OAUTH_STATE",
+      returnTo: req.nextUrl.searchParams.get("returnTo") === "paypal" ? "paypal" : "settings",
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()

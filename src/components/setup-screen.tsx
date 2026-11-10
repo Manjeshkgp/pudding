@@ -3,9 +3,9 @@ import TopBar from "@/components/top-bar";
 import { ChevronRightIcon } from "@/components/icons";
 
 const LINKS = [
-  { label: "Parent and Guardian Agreement", href: "/legal/guardian" },
-  { label: "Payment and Refund Policy", href: "/legal/payments" },
-  { label: "Contact support", href: "/legal/support" },
+  { label: "Parent and Guardian Agreement", href: "/legal/guardian?returnTo=%2Fsetup" },
+  { label: "Payment and Refund Policy", href: "/legal/payments?returnTo=%2Fsetup" },
+  { label: "Contact support", href: "/legal/support?returnTo=%2Fsetup" },
 ];
 
 export default function SetupScreen() {
@@ -26,11 +26,11 @@ export default function SetupScreen() {
         <section className="flex flex-col gap-6 px-4 tracking-[-0.17px]">
           <p className="text-[17px] leading-[25px] text-black">
             By continuing, you agree to the{" "}
-            <Link href="/legal/terms" className="font-medium leading-[22px] text-[#276ef1]">
+            <Link href="/legal/terms?returnTo=%2Fsetup" className="font-medium leading-[22px] text-[#276ef1]">
               Pudding Terms &amp; Conditions
             </Link>{" "}
             and acknowledge the{" "}
-            <Link href="/legal/privacy" className="font-medium leading-[22px] text-[#276ef1]">
+            <Link href="/legal/privacy?returnTo=%2Fsetup" className="font-medium leading-[22px] text-[#276ef1]">
               Privacy Notice
             </Link>
             . If you are setting up an account for a child, you confirm that you

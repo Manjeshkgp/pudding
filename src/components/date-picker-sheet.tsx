@@ -76,10 +76,18 @@ export default function DatePickerSheet({
   );
 
   const monthIndex = (y: number, m: number) => y * 12 + m;
-  const canPrev = monthIndex(view.y, view.m) > monthIndex(min.getFullYear(), min.getMonth());
-  const canNext = monthIndex(view.y, view.m) < monthIndex(max.getFullYear(), max.getMonth());
+  const canPrev = years
+    ? view.y > min.getFullYear()
+    : monthIndex(view.y, view.m) > monthIndex(min.getFullYear(), min.getMonth());
+  const canNext = years
+    ? view.y < max.getFullYear()
+    : monthIndex(view.y, view.m) < monthIndex(max.getFullYear(), max.getMonth());
 
   function step(delta: number) {
+    if (years) {
+      setView({ y: view.y + delta, m: view.m });
+      return;
+    }
     const d = new Date(view.y, view.m + delta, 1);
     setView({ y: d.getFullYear(), m: d.getMonth() });
   }
@@ -155,7 +163,7 @@ export default function DatePickerSheet({
                     <div className="flex items-center">
                       <button
                         type="button"
-                        aria-label="Previous month"
+                        aria-label={years ? "Previous year" : "Previous month"}
                         disabled={!canPrev}
                         onClick={() => step(-1)}
                         className={arrow}
@@ -164,7 +172,7 @@ export default function DatePickerSheet({
                       </button>
                       <button
                         type="button"
-                        aria-label="Next month"
+                        aria-label={years ? "Next year" : "Next month"}
                         disabled={!canNext}
                         onClick={() => step(1)}
                         className={arrow}

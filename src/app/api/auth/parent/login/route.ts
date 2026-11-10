@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
         user: {
           id: user.id,
           name: user.name,
+          avatar: user.avatar,
           email: user.email,
           phone: user.phone,
           role: user.role,
