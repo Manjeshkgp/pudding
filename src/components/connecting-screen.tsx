@@ -19,12 +19,12 @@ export default function ConnectingScreen() {
   // Go to the completion screen 1 second after the animation ends.
   const goNext = () => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => router.push("/done"), 1000);
+    timer.current = window.setTimeout(() => router.push("/pin"), 1000);
   };
 
   useEffect(() => {
     // Fallback if the animation never reports completion (e.g. reduced motion).
-    timer.current = window.setTimeout(() => router.push("/done"), 5400 + 1000 + 1000);
+    timer.current = window.setTimeout(() => router.push("/pin"), 5400 + 1000 + 1000);
     return () => window.clearTimeout(timer.current);
   }, [router]);
   return (
