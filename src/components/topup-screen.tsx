@@ -8,6 +8,7 @@ import HelpLink from "@/components/help-link";
 import { ChevronLeftIcon, QuestionCircleIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
 import PaypalMark from "@/components/paypal-mark";
+import Keypad from "@/components/keypad";
 
 const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), {
   ssr: false,
@@ -22,29 +23,9 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 type Step = "amount" | "pin";
 type Phase = "idle" | "adding" | "added";
 
-const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"] as const;
-
 function money(raw: string) {
   const n = Number(raw || "0");
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function Keypad({ onKey }: { onKey: (k: string) => void }) {
-  return (
-    <div className="grid grid-cols-3">
-      {KEYS.map((k) => (
-        <button
-          key={k}
-          type="button"
-          aria-label={k === "back" ? "Delete" : k === "." ? "Decimal point" : k}
-          onClick={() => onKey(k)}
-          className="flex h-[clamp(52px,8.5dvh,69px)] items-center justify-center text-[28px] font-semibold leading-9 tracking-[-0.21px] text-black transition-colors active:bg-black/5"
-        >
-          {k === "back" ? <ChevronLeftIcon className="size-6" /> : k}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function DollarIcon() {
@@ -346,7 +327,7 @@ export default function TopupScreen() {
                 className="absolute inset-0 flex flex-col"
               >
                 {/* Summary card */}
-                <div className="p-4 pt-1">
+                <div className="px-4 pb-6 pt-3">
                   <div className="flex items-center justify-center gap-2.5 rounded-2xl bg-[#eff4fe] px-5 py-3">
                     <div className="flex min-w-0 flex-1 flex-col gap-[3px] text-black">
                       <p className="text-[17px] font-medium leading-[22px] tracking-[-0.17px]">
@@ -371,12 +352,12 @@ export default function TopupScreen() {
                 </div>
 
                 {/* PIN dots */}
-                <div className="flex flex-1 items-center justify-center gap-6 px-4 pb-16">
+                <div className="flex flex-1 items-center justify-center gap-6 px-4 pb-20">
                   {Array.from({ length: PIN_LENGTH }).map((_, i) => (
                     <span
                       key={i}
                       className={`size-6 rounded-full border transition-colors ${
-                        i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#a6a6a6] bg-white"
+                        i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#e8e8e8] bg-white"
                       }`}
                     />
                   ))}

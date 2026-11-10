@@ -1,34 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
-import { useKeyboard } from "@/components/use-keyboard";
+import Keypad from "@/components/keypad";
 
 // Parent flow, step 8: set up a 6-digit PIN, then confirm it.
-// States from Figma: empty, partly filled, complete, confirm, loading and
-// "PIN is not matching". Sample only: the PIN stays on this screen and is
-// never saved or sent anywhere.
+// Uses the on-screen number pad from Figma. States: empty, partly filled,
+// complete, confirm, loading and "PIN is not matching". Sample only: the PIN
+// stays on this screen and is never saved or sent anywhere.
 const LENGTH = 6;
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function PinScreen() {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<"create" | "confirm">("create");
   const [first, setFirst] = useState("");
   const [pin, setPin] = useState("");
-  const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [toast, setToast] = useState<number | null>(null);
   const [me, setMe] = useState(0);
-  const { open, offset } = useKeyboard(inputRef);
 
   const complete = pin.length === LENGTH;
-  const onKeyboard = focused && open;
 
   // The picture picked on the profile screen
   useEffect(() => {
@@ -45,10 +42,18 @@ export default function PinScreen() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  function change(value: string) {
-    setPin(value.replace(/\D/g, "").slice(0, LENGTH));
-    setMismatch(false);
-  }
+  const press = useCallback(
+    (k: string) => {
+      if (loading) return;
+      setMismatch(false);
+      setPin((p) => {
+        if (k === "back") return p.slice(0, -1);
+        if (k === "." || p.length >= LENGTH) return p;
+        return p + k;
+      });
+    },
+    [loading],
+  );
 
   function submit() {
     if (loading || !complete) return;
@@ -56,7 +61,6 @@ export default function PinScreen() {
       setFirst(pin);
       setPin("");
       setStep("confirm");
-      inputRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -72,22 +76,25 @@ export default function PinScreen() {
     }, 1200);
   }
 
-  const barText =
-    "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
+  // Keyboard on a computer
+  useEffect(() => {
+    function down(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (/^[0-9]$/.test(e.key)) press(e.key);
+      else if (e.key === "Backspace") press("back");
+      else if (e.key === "Enter") submit();
+    }
+    window.addEventListener("keydown", down);
+    return () => window.removeEventListener("keydown", down);
+  });
+
   const barColor =
     complete || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
-  const barInner = loading ? (
-    <SpinnerIcon className="size-6 text-white" />
-  ) : step === "create" ? (
-    "Next"
-  ) : (
-    "Confirm"
-  );
 
   return (
     <main className="min-h-dvh bg-white">
-      <div className="relative w-full bg-white">
-        <div className="sticky top-0 z-30 flex items-center justify-end bg-white px-4 pb-2 pt-[max(20px,env(safe-area-inset-top))]">
+      <div className="mx-auto flex h-dvh w-full max-w-[520px] flex-col overflow-hidden bg-white">
+        <div className="flex items-center justify-end px-4 pb-2 pt-[max(20px,env(safe-area-inset-top))]">
           <Link
             href="/account"
             aria-label="Account"
@@ -132,7 +139,7 @@ export default function PinScreen() {
           key={`h-${step}`}
           initial={step === "confirm" ? { x: "100%" } : false}
           animate={{ x: 0 }}
-          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.35, ease: EASE }}
           className="px-4 pb-8 pt-4"
         >
           <h1 className="font-display text-[32px] font-bold leading-[40px] tracking-[-0.64px] text-black">
@@ -142,76 +149,50 @@ export default function PinScreen() {
           </h1>
         </motion.header>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-        >
-          <div className="relative">
-            <motion.div
-              key={`d-${step}`}
-              initial={step === "confirm" ? { x: "100%" } : false}
-          animate={{ x: 0 }}
-          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className="flex items-center justify-center gap-8 px-4 py-10"
-            >
-              {Array.from({ length: LENGTH }).map((_, i) => (
-                <span
-                  key={i}
-                  className={`size-6 rounded-full border transition-colors ${
-                    i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#a6a6a6] bg-white"
-                  } ${mismatch ? "shadow-[0px_0px_0px_1px_#de1135]" : ""}`}
-                />
-              ))}
-            </motion.div>
-            {/* The real input sits invisibly over the circles, so tapping them opens the keyboard */}
-            <input
-              ref={inputRef}
-              autoFocus
-              aria-label={step === "create" ? "Create a 6-digit PIN" : "Confirm your 6-digit PIN"}
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              maxLength={LENGTH}
-              value={pin}
-              onChange={(e) => change(e.target.value)}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              className="absolute inset-0 size-full cursor-default bg-transparent text-[16px] text-transparent caret-transparent opacity-0 outline-none"
-            />
-          </div>
-        </form>
-      </div>
+        {/* PIN dots */}
+        <div className="min-h-0 flex-1 overflow-hidden pt-[18px]">
+          <motion.div
+            key={`d-${step}`}
+            initial={step === "confirm" ? { x: "100%" } : false}
+            animate={{ x: 0 }}
+            transition={{ duration: 0.35, ease: EASE }}
+            className="flex items-center justify-center gap-6 px-4 py-10"
+            role="img"
+            aria-label={`${pin.length} of ${LENGTH} digits entered`}
+          >
+            {Array.from({ length: LENGTH }).map((_, i) => (
+              <span
+                key={i}
+                className={`size-6 rounded-full border transition-colors ${
+                  i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#a6a6a6] bg-white"
+                } ${mismatch ? "shadow-[0px_0px_0px_1px_#de1135]" : ""}`}
+              />
+            ))}
+          </motion.div>
+        </div>
 
-      {onKeyboard ? (
-        /* Flat bar sitting on top of the keyboard */
-        <div className="fixed inset-x-0 z-10" style={{ bottom: offset }}>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={submit}
-            disabled={!complete && !loading}
-            aria-busy={loading}
-            className={`flex h-[52px] w-full items-center justify-center px-5 py-3.5 ${barText} ${barColor}`}
-          >
-            {barInner}
-          </button>
+        {/* Keypad + action */}
+        <div className="flex flex-col gap-8">
+          <Keypad onKey={press} />
+          <div className="px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!complete && !loading}
+              aria-busy={loading}
+              className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors ${barColor}`}
+            >
+              {loading ? (
+                <SpinnerIcon className="size-6 text-white" />
+              ) : step === "create" ? (
+                "Next"
+              ) : (
+                "Confirm"
+              )}
+            </button>
+          </div>
         </div>
-      ) : (
-        <div className="fixed inset-x-0 bottom-0 z-10 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!complete && !loading}
-            aria-busy={loading}
-            className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 ${barText} ${barColor}`}
-          >
-            {barInner}
-          </button>
-        </div>
-      )}
+      </div>
     </main>
   );
 }
