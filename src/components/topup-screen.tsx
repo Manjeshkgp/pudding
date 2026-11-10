@@ -29,7 +29,7 @@ function money(raw: string) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function DollarIcon() {
+export function DollarIcon() {
   return (
     <svg viewBox="0 0 28 28" className="size-7" aria-hidden="true">
       <circle cx="14" cy="14" r="11" fill="#000" />
@@ -44,7 +44,7 @@ function DollarIcon() {
   );
 }
 
-function SendIcon() {
+export function SendIcon() {
   return (
     <svg viewBox="0 0 28 28" className="size-7" aria-hidden="true">
       <path d="M4 4.5 24.5 14 4 23.5l2.6-8.2L15 14 6.6 12.7 4 4.5Z" fill="#000" />
