@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import TopupPill from "@/components/topup-pill";
 import { CardIcon, ChevronRightIcon, RefreshIcon, SlidersIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
 
@@ -47,6 +50,27 @@ const ROWS = [
 export default function ParentHome() {
   const [tab, setTab] = useState(0);
 
+  const router = useRouter();
+  // Top-up opens by growing out of the tapped button until it fills the screen
+  const [grow, setGrow] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    from: string;
+  } | null>(null);
+
+  function launchTopup(e: React.MouseEvent<HTMLAnchorElement>, from: string) {
+    if (grow) return;
+    e.preventDefault();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      router.push("/topup");
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    setGrow({ left: r.left, top: r.top, width: r.width, height: r.height, from });
+  }
+
   return (
     <main className="min-h-dvh bg-[#f1f7fa]">
       <div className="mx-auto w-full max-w-[520px] pb-[140px] pt-[max(16px,env(safe-area-inset-top))]">
@@ -84,6 +108,7 @@ export default function ParentHome() {
           </p>
           <Link
             href="/topup"
+            onClick={(e) => launchTopup(e, "#f1f7fa")}
             className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
           >
             Top your wallet now
@@ -173,17 +198,33 @@ export default function ParentHome() {
 
       {/* Top up */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center px-2.5 pb-[max(48px,env(safe-area-inset-bottom))] pt-4">
-        <Link
-          href="/topup"
-          className="pointer-events-auto flex items-center justify-center rounded-full border-[2.5px] border-transparent px-5 py-3 font-display text-[20px] font-bold leading-7 tracking-[-0.15px] text-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.2)] transition-transform active:scale-95"
-          style={{
-            background:
-              "linear-gradient(#260a2f,#260a2f) padding-box, linear-gradient(135deg,#d9d9d9,#7a5a88 45%,#d9d9d9) border-box",
-          }}
-        >
-          Top up
-        </Link>
+        <TopupPill onLaunch={(e) => launchTopup(e, "#260a2f")} />
       </div>
+
+      {grow && (
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-auto fixed z-50"
+          initial={{
+            left: grow.left,
+            top: grow.top,
+            width: grow.width,
+            height: grow.height,
+            borderRadius: grow.height / 2,
+            backgroundColor: grow.from,
+          }}
+          animate={{
+            left: 0,
+            top: 0,
+            width: "100vw",
+            height: "100dvh",
+            borderRadius: 0,
+            backgroundColor: "#ffd7ef",
+          }}
+          transition={{ duration: 0.55, ease: [0.7, 0, 0.2, 1] }}
+          onAnimationComplete={() => router.push("/topup")}
+        />
+      )}
     </main>
   );
 }

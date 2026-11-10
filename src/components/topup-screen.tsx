@@ -18,6 +18,7 @@ const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), {
 // Disclaimer sheet -> Add amount keypad -> Enter PIN -> adding sheet -> added sheet.
 // Sample only: nothing is sent anywhere and the PIN is never checked or saved.
 const PIN_LENGTH = 6;
+const DISCLAIMER_KEY = "pudding-topup-disclaimer-seen";
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 type Step = "amount" | "pin";
@@ -182,12 +183,28 @@ function StatusSheet({ done, amount }: { done: boolean; amount: string }) {
 
 export default function TopupScreen() {
   const router = useRouter();
-  const [showDisclaimer, setShowDisclaimer] = useState(true);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [step, setStep] = useState<Step>("amount");
   const [raw, setRaw] = useState("");
   const [pin, setPin] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [shake, setShake] = useState(0);
+
+  // The disclaimer shows only the first time Top-up is opened on this device
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(DISCLAIMER_KEY)) setShowDisclaimer(true);
+    } catch {
+      setShowDisclaimer(true);
+    }
+  }, []);
+
+  function acceptDisclaimer() {
+    try {
+      localStorage.setItem(DISCLAIMER_KEY, "1");
+    } catch {}
+    setShowDisclaimer(false);
+  }
 
   const amount = money(raw);
   const value = Number(raw || "0");
@@ -383,7 +400,7 @@ export default function TopupScreen() {
       </div>
 
       <AnimatePresence>
-        {showDisclaimer && <Disclaimer onProceed={() => setShowDisclaimer(false)} />}
+        {showDisclaimer && <Disclaimer onProceed={acceptDisclaimer} />}
       </AnimatePresence>
       {phase !== "idle" && <StatusSheet done={phase === "added"} amount={amount} />}
     </main>
