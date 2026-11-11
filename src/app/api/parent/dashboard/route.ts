@@ -11,7 +11,7 @@ import { RECIPIENT_EMAIL_WARNING_MESSAGE } from "@/services/spending-rules.servi
  * Returns:
  * - Family Balance summary (unallocated, allocated to kids, pending requests)
  * - Overview of all children (balances, active goals, allowance rules, spending limits)
- * - Pending approvals queue (chores awaiting review, spending requests awaiting review, donations awaiting review)
+ * - Pending approvals queue (chores awaiting review, spending requests awaiting review)
  * - Upcoming scheduled allowance payments
  * - Spending & savings analytics (category breakdown charts, savings rate, chore completion rate)
  */
@@ -25,7 +25,6 @@ export async function GET(req: NextRequest) {
       children,
       pendingChoreSubmissions,
       pendingSpendRequests,
-      pendingDonations,
       upcomingAllowances,
       completedSpends30d,
       allChoreSubmissions30d,
@@ -67,17 +66,6 @@ export async function GET(req: NextRequest) {
           status: { in: ["PENDING_APPROVAL", "APPROVED", "COUNTER_OFFERED"] },
         },
         include: {
-          child: { select: { id: true, name: true, avatar: true } },
-        },
-        orderBy: { createdAt: "asc" },
-      }),
-      prisma.donation.findMany({
-        where: {
-          familyId: family.id,
-          status: "PENDING_APPROVAL",
-        },
-        include: {
-          charity: true,
           child: { select: { id: true, name: true, avatar: true } },
         },
         orderBy: { createdAt: "asc" },
@@ -131,10 +119,9 @@ export async function GET(req: NextRequest) {
       if (child.wallet) {
         totalInChildBuckets = totalInChildBuckets
           .plus(child.wallet.spendBalance)
-          .plus(child.wallet.saveBalance)
-          .plus(child.wallet.giveBalance);
+          .plus(child.wallet.saveBalance);
         totalLockedPending = totalLockedPending.plus(
-          child.wallet.lockedPendingBalance
+          child.wallet.lockedPendingBalance,
         );
       }
       for (const g of child.savingsGoals) {
@@ -144,7 +131,7 @@ export async function GET(req: NextRequest) {
 
     const pendingSpendTotal = pendingSpendRequests.reduce(
       (acc, r) => acc.plus(r.amount),
-      new Prisma.Decimal(0)
+      new Prisma.Decimal(0),
     );
 
     // Calculate Spending by Category Chart Data (FR-10.3)
@@ -165,7 +152,7 @@ export async function GET(req: NextRequest) {
         percentage: totalSpent30d.gt(0)
           ? Math.round(amt.div(totalSpent30d).mul(100).toNumber())
           : 0,
-      })
+      }),
     );
 
     // Calculate 30-day Family Savings Rate & Chore Completion Rate (FR-10.3)
@@ -194,13 +181,13 @@ export async function GET(req: NextRequest) {
       ? Math.min(
           100,
           Math.round(
-            totalSavedByKids30d.div(totalCreditedToKids30d).mul(100).toNumber()
-          )
+            totalSavedByKids30d.div(totalCreditedToKids30d).mul(100).toNumber(),
+          ),
         )
       : 20;
 
     const approvedChores30d = allChoreSubmissions30d.filter(
-      (s) => s.status === "APPROVED"
+      (s) => s.status === "APPROVED",
     ).length;
     const choreCompletionRatePercent =
       allChoreSubmissions30d.length > 0
@@ -248,12 +235,11 @@ export async function GET(req: NextRequest) {
               id: c.wallet.id,
               spendBalance: c.wallet.spendBalance.toString(),
               saveBalance: c.wallet.saveBalance.toString(),
-              giveBalance: c.wallet.giveBalance.toString(),
-              lockedPendingBalance:
-                c.wallet.lockedPendingBalance.toString(),
+
+              lockedPendingBalance: c.wallet.lockedPendingBalance.toString(),
               defaultSplitSpend: c.wallet.defaultSplitSpend,
               defaultSplitSave: c.wallet.defaultSplitSave,
-              defaultSplitGive: c.wallet.defaultSplitGive,
+
               isFrozen: c.wallet.isFrozen,
             }
           : null,
@@ -287,9 +273,7 @@ export async function GET(req: NextRequest) {
       })),
       approvalsQueue: {
         totalPendingCount:
-          pendingChoreSubmissions.length +
-          pendingSpendRequests.length +
-          pendingDonations.length,
+          pendingChoreSubmissions.length + pendingSpendRequests.length,
         choreSubmissions: pendingChoreSubmissions.map((s) => ({
           id: s.id,
           choreId: s.choreId,
@@ -308,10 +292,6 @@ export async function GET(req: NextRequest) {
             r.optionType === "OPTION_A_PAYPAL_EMAIL"
               ? RECIPIENT_EMAIL_WARNING_MESSAGE
               : null,
-        })),
-        donations: pendingDonations.map((d) => ({
-          ...d,
-          amount: d.amount.toString(),
         })),
       },
       upcomingPayments: upcomingAllowances.map((a) => ({

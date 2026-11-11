@@ -1,5 +1,8 @@
-import ProfileScreen from "@/components/profile-screen";
-
-export default function Page() {
-  return <ProfileScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/profile", await searchParams);
 }

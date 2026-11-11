@@ -1,5 +1,8 @@
-import SecurityScreen from "@/components/security-screen";
-
-export default function SecurityPage() {
-  return <SecurityScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/security", await searchParams);
 }

@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import PinCard from "@/components/pin-card";
+import Link from "next/link";
 
-export type Task = { id: number; icon: string; title: string; reward: string };
+export type Task = {
+  id: string;
+  icon: string;
+  title: string;
+  reward: string;
+  submitted?: boolean;
+  status?: string;
+};
 
 // Height of a card with three tasks
 const CARD_H = 352;
@@ -14,9 +21,21 @@ const label15 = "text-[15px] font-medium leading-[19px] tracking-[-0.15px]";
 
 function ClockIcon({ color }: { color: string }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
       <circle cx="10" cy="10" r="7.5" stroke={color} strokeWidth="1.8" />
-      <path d="M10 5.8V10l2.8 1.8" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M10 5.8V10l2.8 1.8"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -29,6 +48,8 @@ export default function TaskCard({
   progress,
   tasks,
   pinTop,
+  onSubmit,
+  busy,
 }: {
   title: string;
   timeLeft: string;
@@ -38,10 +59,9 @@ export default function TaskCard({
   tasks: Task[];
   /** Where this card starts on the page. When set, it pins and shrinks while scrolling. */
   pinTop?: number;
+  onSubmit?: (id: string) => void;
+  busy?: boolean;
 }) {
-  const [done, setDone] = useState<number[]>([]);
-  const toggle = (id: number) =>
-    setDone((d) => (d.includes(id) ? d.filter((x) => x !== id) : [...d, id]));
   const timeColor = urgent ? "#ff9500" : "#a6a6a6";
 
   const header = (
@@ -57,15 +77,17 @@ export default function TaskCard({
   );
 
   const progressBar = (
-  <div className="relative h-5 overflow-hidden rounded-full bg-[#f3f3f3]">
-    <div
-      className="absolute inset-y-0 left-0 rounded-full bg-[#ff9500]"
-      style={{ width: `${(progress.done / progress.total) * 100}%` }}
-    />
-    <span className="absolute inset-0 flex items-center justify-center text-[12px] font-medium leading-4 tracking-[-0.12px] text-white">
-      {progress.done}/{progress.total}
-    </span>
-  </div>
+    <div className="relative h-5 overflow-hidden rounded-full bg-[#f3f3f3]">
+      <div
+        className="absolute inset-y-0 left-0 rounded-full bg-[#ff9500]"
+        style={{
+          width: `${(progress.total ? progress.done / progress.total : 0) * 100}%`,
+        }}
+      />
+      <span className="absolute inset-0 flex items-center justify-center text-[12px] font-medium leading-4 tracking-[-0.12px] text-white">
+        {progress.done}/{progress.total}
+      </span>
+    </div>
   );
 
   const body = (
@@ -79,20 +101,45 @@ export default function TaskCard({
               <img src={t.icon} alt="" width={32} height={32} />
             </div>
             <div className="flex flex-1 flex-col gap-0.5">
-              <span className="font-display text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">{t.title}</span>
-              <span className={`${label15} text-[#a6a6a6]`}>{t.reward}</span>
+              <Link
+                href={`/chores/${t.id}/proof`}
+                className="font-display text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black"
+              >
+                {t.title}
+              </Link>
+              <span className={`${label15} text-[#a6a6a6]`}>
+                {t.reward}
+                {t.status === "PENDING"
+                  ? " · Waiting for parent"
+                  : t.status === "APPROVED"
+                    ? " · Approved"
+                    : ""}
+              </span>
             </div>
             <button
               type="button"
               role="checkbox"
-              aria-checked={done.includes(t.id)}
-              aria-label={`Mark "${t.title}" done`}
-              onClick={() => toggle(t.id)}
-              className={`flex size-6 items-center justify-center rounded-md border-2 ${done.includes(t.id) ? "border-black bg-black" : "border-[#a6a6a6]"}`}
+              aria-checked={Boolean(t.submitted)}
+              aria-label={`Open evidence for "${t.title}"`}
+              disabled={busy || t.submitted || !onSubmit}
+              onClick={() => onSubmit?.(t.id)}
+              className={`flex size-6 items-center justify-center rounded-md border-2 ${Boolean(t.submitted) ? "border-black bg-black" : "border-[#a6a6a6]"}`}
             >
-              {done.includes(t.id) && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="m5 12.5 4.5 4.5L19 7.5" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              {Boolean(t.submitted) && (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="m5 12.5 4.5 4.5L19 7.5"
+                    stroke="#fff"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               )}
             </button>

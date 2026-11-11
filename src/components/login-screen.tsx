@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import BackButton from "@/components/back-button";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { postApi } from "@/lib/client-api";
 import HelpLink from "@/components/help-link";
 import {
   AlertCircleIcon,
@@ -18,13 +20,13 @@ import { useKeyboard } from "@/components/use-keyboard";
 
 // Parent login. States from Figma: idle, email focused, email typed, password
 // focused, password typed (hidden / shown), error ("Combination is invalid")
-// and loading. Sample data only: the first attempt always shows the error,
-// the second one signs in. Nothing is sent anywhere.
+// and loading. Both parent and child variants use the real authentication APIs.
 const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 
 const circle =
   "flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]";
-const label = "text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black";
+const label =
+  "text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black";
 const MIN_PASSWORD = 8;
 
 type FieldName = "email" | "password";
@@ -48,12 +50,12 @@ export type LoginCopy = {
 
 const PARENT: LoginCopy = {
   backHref: "/parent",
-  nextHref: "/crew",
+  nextHref: "/family",
   title: "Nice to see you again",
   subtitle: "Pick up where you left off your journey.",
   focusedTitle: "Log in",
   emailPlaceholder: "Enter your mail",
-  sampleError: true,
+  forgotHref: "/forgot-password",
 };
 
 export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
@@ -61,7 +63,7 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
   const passwordRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
   const wasOpen = useRef(false);
-  const attempts = useRef(0);
+  const [errorMessage, setErrorMessage] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [shown, setShown] = useState(false);
@@ -72,8 +74,14 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
   const { open, offset } = useKeyboard(activeRef);
 
   const focused = focus !== null;
-  const emailOk = copy.plainEmail ? email.trim() !== "" : /^\S+@\S+\.\S+$/.test(email.trim());
-  const valid = emailOk && password.length >= MIN_PASSWORD;
+  const emailOk = copy.plainEmail
+    ? email.trim() !== ""
+    : /^\S+@\S+\.\S+$/.test(email.trim());
+  const valid =
+    emailOk &&
+    (copy.plainEmail
+      ? /^\d{6}$/.test(password)
+      : password.length >= MIN_PASSWORD);
   const onKeyboard = (focused && open) || ((loading || error) && open);
 
   // Keyboard dismissed (back gesture): drop focus so the header comes back
@@ -96,20 +104,31 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
     if (error) setError(false);
   }
 
-  function submit() {
+  async function submit() {
     if (loading || !valid) return;
     setLoading(true);
     setError(false);
-    window.setTimeout(() => {
+    try {
+      await postApi(
+        copy.plainEmail ? "/api/auth/child/login" : "/api/auth/parent/login",
+        copy.plainEmail
+          ? { username: email.trim().toLowerCase(), pin: password }
+          : { emailOrPhone: email.trim(), password },
+      );
+      try {
+        localStorage.setItem("pudding-auth-changed", String(Date.now()));
+      } catch {}
+      router.replace(copy.plainEmail ? copy.nextHref : "/onboarding");
+      router.refresh();
+    } catch (cause) {
+      setErrorMessage(
+        cause instanceof Error ? cause.message : "Unable to sign in.",
+      );
+      setError(true);
+      setToast(true);
+    } finally {
       setLoading(false);
-      attempts.current += 1;
-      if (copy.sampleError && attempts.current === 1) {
-        setError(true);
-        setToast(true);
-      } else {
-        router.push(copy.nextHref);
-      }
-    }, 1500);
+    }
   }
 
   const fields: {
@@ -119,13 +138,35 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
     value: string;
     set: (v: string) => void;
   }[] = [
-    { name: "email", title: copy.emailLabel ?? "Email", placeholder: copy.emailPlaceholder, value: email, set: setEmail },
-    { name: "password", title: "Password", placeholder: "Enter your password", value: password, set: setPassword },
+    {
+      name: "email",
+      title: copy.emailLabel ?? "Email",
+      placeholder: copy.emailPlaceholder,
+      value: email,
+      set: setEmail,
+    },
+    {
+      name: "password",
+      title: copy.plainEmail ? "PIN" : "Password",
+      placeholder: copy.plainEmail
+        ? "Enter your 6-digit PIN"
+        : "Enter your password",
+      value: password,
+      set: copy.plainEmail
+        ? (value: string) => setPassword(value.replace(/\D/g, ""))
+        : setPassword,
+    },
   ];
 
-  const barText = "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
-  const barColor = valid || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
-  const barInner = loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue";
+  const barText =
+    "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
+  const barColor =
+    valid || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
+  const barInner = loading ? (
+    <SpinnerIcon className="size-6 text-white" />
+  ) : (
+    "Continue"
+  );
 
   return (
     <main className="min-h-dvh bg-white">
@@ -144,7 +185,7 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
                 className="flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-[15px] leading-[22px] tracking-[-0.15px] text-white"
               >
                 <AlertCircleIcon className="size-6 shrink-0" />
-                <span className="whitespace-nowrap">Combination is invalid</span>
+                <span className="whitespace-nowrap">{errorMessage}</span>
               </motion.div>
             </div>
           )}
@@ -153,9 +194,13 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="relative flex h-11 items-center justify-between">
-            <Link href={copy.backHref} aria-label="Back" className={circle}>
+            <BackButton
+              fallback={copy.backHref}
+              aria-label="Back"
+              className={circle}
+            >
               <ChevronLeftIcon className="size-6 text-black" />
-            </Link>
+            </BackButton>
             <HelpLink aria-label="Help" className={circle}>
               <QuestionCircleIcon className="size-6 text-black" />
             </HelpLink>
@@ -163,7 +208,10 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
 
           <motion.div
             initial={false}
-            animate={{ paddingTop: focused ? 0 : 24, paddingBottom: focused ? 36 : 32 }}
+            animate={{
+              paddingTop: focused ? 0 : 24,
+              paddingBottom: focused ? 36 : 32,
+            }}
             transition={ease}
           >
             <motion.div
@@ -221,15 +269,40 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
                 </label>
                 <div
                   className={`flex h-14 w-full items-center rounded-lg border-[3px] p-2 ${
-                    isFocused ? "border-black bg-white" : "border-transparent bg-[#f3f3f3]"
+                    isFocused
+                      ? "border-black bg-white"
+                      : "border-transparent bg-[#f3f3f3]"
                   }`}
                 >
                   <input
                     ref={isEmail ? undefined : passwordRef}
                     id={f.name}
-                    type={isEmail ? (copy.plainEmail ? "text" : "email") : shown ? "text" : "password"}
-                    inputMode={isEmail && !copy.plainEmail ? "email" : undefined}
-                    autoComplete={isEmail ? (copy.plainEmail ? "username" : "email") : "current-password"}
+                    type={
+                      isEmail
+                        ? copy.plainEmail
+                          ? "text"
+                          : "email"
+                        : shown
+                          ? "text"
+                          : "password"
+                    }
+                    inputMode={
+                      isEmail
+                        ? copy.plainEmail
+                          ? "text"
+                          : "email"
+                        : copy.plainEmail
+                          ? "numeric"
+                          : undefined
+                    }
+                    maxLength={!isEmail && copy.plainEmail ? 6 : undefined}
+                    autoComplete={
+                      isEmail
+                        ? copy.plainEmail
+                          ? "username"
+                          : "email"
+                        : "current-password"
+                    }
                     autoCapitalize="none"
                     enterKeyHint={isEmail ? "next" : "go"}
                     value={f.value}
@@ -261,7 +334,9 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
                   ) : isFocused && f.value && isEmail ? (
                     <button
                       type="button"
-                      aria-label={copy.plainEmail ? "Clear username" : "Clear email"}
+                      aria-label={
+                        copy.plainEmail ? "Clear username" : "Clear email"
+                      }
                       // keep the keyboard open
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => edit(setEmail, "")}

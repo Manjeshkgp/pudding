@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import BackButton from "@/components/back-button";
+import SetupExitButton from "@/components/setup-exit-button";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -26,8 +28,7 @@ const circle =
   "flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]";
 const label =
   "text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black";
-const fieldText =
-  "text-[17px] leading-[25px] tracking-[-0.17px]";
+const fieldText = "text-[17px] leading-[25px] tracking-[-0.17px]";
 
 type FieldName = "first" | "last";
 
@@ -41,7 +42,12 @@ function formatApiDate(d: Date) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export default function AddKidScreen() {
+export default function AddKidScreen({
+  mode = "management",
+}: {
+  mode?: "management" | "onboarding";
+}) {
+  const listHref = mode === "onboarding" ? "/onboarding/children" : "/family";
   const lastRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
   const wasOpen = useRef(false);
@@ -125,14 +131,16 @@ export default function AddKidScreen() {
       });
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to add this child.");
+      setError(
+        cause instanceof Error ? cause.message : "Unable to add this child.",
+      );
       setLoading(false);
       return false;
     }
   }
 
   async function submit() {
-    if (await saveChild()) router.push("/crew");
+    if (await saveChild()) router.replace(listHref);
   }
 
   async function addAnother() {
@@ -215,18 +223,30 @@ export default function AddKidScreen() {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="relative flex h-11 items-center justify-between">
-            <Link href="/profile" aria-label="Back" className={circle}>
-              <ChevronLeftIcon className="size-6 text-black" />
-            </Link>
-            <Link
-              href="/account"
-              aria-label="Account"
-              className="size-11 overflow-hidden rounded-full"
-              style={{ backgroundColor: AVATARS[avatar].bg }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={AVATARS[avatar].src} alt="" className="size-full" />
-            </Link>
+            {mode !== "onboarding" || savedChildrenCount > 0 ? (
+              <BackButton
+                fallback={listHref}
+                aria-label="Back"
+                className={circle}
+              >
+                <ChevronLeftIcon className="size-6 text-black" />
+              </BackButton>
+            ) : (
+              <span className="size-11" />
+            )}
+            {mode === "onboarding" ? (
+              <SetupExitButton />
+            ) : (
+              <Link
+                href="/account"
+                aria-label="Account"
+                className="size-11 overflow-hidden rounded-full"
+                style={{ backgroundColor: AVATARS[avatar].bg }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={AVATARS[avatar].src} alt="" className="size-full" />
+              </Link>
+            )}
           </div>
 
           <motion.div
@@ -280,7 +300,14 @@ export default function AddKidScreen() {
           </motion.div>
         </div>
 
-        {error && <p role="alert" className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p
+            role="alert"
+            className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            {error}
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-6 px-4"
@@ -374,16 +401,18 @@ export default function AddKidScreen() {
 
           {/* Sibling discount note, first kid only */}
           {savedChildrenCount === 0 && (
-          <div className="flex items-start gap-3 rounded-lg bg-[#eff4fe] p-4">
-            <GiftIcon className="size-5 shrink-0 text-black" />
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-[15px] tracking-[-0.15px] text-black">
-              <p className="font-medium leading-[19px]">More kids, more savings!</p>
-              <p className="leading-[22px]">
-                You can add multiple children and enjoy special sibling discount
-                on your plan.
-              </p>
+            <div className="flex items-start gap-3 rounded-lg bg-[#eff4fe] p-4">
+              <GiftIcon className="size-5 shrink-0 text-black" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-[15px] tracking-[-0.15px] text-black">
+                <p className="font-medium leading-[19px]">
+                  More kids, more savings!
+                </p>
+                <p className="leading-[22px]">
+                  You can add multiple children and manage their allowances and
+                  spending controls together.
+                </p>
+              </div>
             </div>
-          </div>
           )}
         </form>
       </div>
@@ -394,7 +423,7 @@ export default function AddKidScreen() {
           {savedChildrenCount > 0 && (
             <button
               type="button"
-              onClick={() => router.push("/crew")}
+              onClick={() => router.replace(listHref)}
               disabled={loading || checkingChildren}
               className={`h-10 w-full ${barText} text-[#276ef1]`}
             >

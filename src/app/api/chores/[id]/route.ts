@@ -1,3 +1,4 @@
+import { chorePeriod } from "@/lib/chore-period";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
@@ -15,7 +16,9 @@ const updateChoreSchema = z.object({
   description: z.string().trim().max(500).nullable().optional(),
   rewardAmount: z.number().min(0).max(1000).optional(),
   dueDate: z.string().datetime().nullable().optional(),
-  recurrence: z.enum(["ONCE", "DAILY", "WEEKLY", "MONTHLY"]).optional(),
+  recurrence: z
+    .enum(["ONCE", "DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"])
+    .optional(),
   assigneeIds: z.array(z.string().trim().min(1)).min(1).optional(),
   isActive: z.boolean().optional(),
 });
@@ -26,7 +29,7 @@ const updateChoreSchema = z.object({
  */
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
@@ -35,7 +38,7 @@ export async function GET(
     const chore = await prisma.chore.findUnique({
       where: { id },
       include: {
-        submissions: {
+        submissions: req.nextUrl.searchParams.get("view") !== "details" && {
           ...(session.subjectType === "CHILD"
             ? { where: { childId: session.sub } }
             : {}),
@@ -59,14 +62,17 @@ export async function GET(
       throw new ApiError(
         403,
         "This chore is not assigned to you",
-        "FORBIDDEN_CHORE_ACCESS"
+        "FORBIDDEN_CHORE_ACCESS",
       );
     }
 
+    const period = chorePeriod(chore.recurrence, chore.createdAt);
     return apiSuccess({
       ...chore,
+      periodStart: period?.start ?? null,
+      periodEndsAt: period?.end ?? null,
       rewardAmount: chore.rewardAmount.toString(),
-      submissions: chore.submissions.map((s) => ({
+      submissions: (chore.submissions ?? []).map((s) => ({
         ...s,
         rewardAmountPaid: s.rewardAmountPaid?.toString() ?? null,
       })),
@@ -82,7 +88,7 @@ export async function GET(
  */
 export async function PATCH(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
@@ -109,32 +115,52 @@ export async function PATCH(
         throw new ApiError(
           400,
           "One or more assigneeIds do not belong to your family",
-          "INVALID_ASSIGNEES"
+          "INVALID_ASSIGNEES",
         );
       }
     }
 
-    const updated = await prisma.chore.update({
-      where: { id: existing.id },
-      data: {
-        ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.description !== undefined
-          ? { description: input.description }
-          : {}),
-        ...(input.rewardAmount !== undefined
-          ? { rewardAmount: input.rewardAmount }
-          : {}),
-        ...(input.dueDate !== undefined
-          ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
-          : {}),
-        ...(input.recurrence !== undefined
-          ? { recurrence: input.recurrence }
-          : {}),
-        ...(input.assigneeIds !== undefined
-          ? { assigneeIds: input.assigneeIds }
-          : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Chore" WHERE "id" = ${id} FOR UPDATE`;
+      const current = await tx.chore.findUnique({ where: { id } });
+      if (!current || current.familyId !== family.id)
+        throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
+      const changesReward =
+        input.rewardAmount !== undefined &&
+        !current.rewardAmount.equals(input.rewardAmount);
+      if (
+        changesReward &&
+        (await tx.choreSubmission.count({
+          where: { choreId: id, status: "PENDING" },
+        }))
+      )
+        throw new ApiError(
+          409,
+          "Review pending submissions before changing this task’s reward.",
+          "CHORE_REWARD_PENDING",
+        );
+      return tx.chore.update({
+        where: { id: existing.id },
+        data: {
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.description !== undefined
+            ? { description: input.description }
+            : {}),
+          ...(input.rewardAmount !== undefined
+            ? { rewardAmount: input.rewardAmount }
+            : {}),
+          ...(input.dueDate !== undefined
+            ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+            : {}),
+          ...(input.recurrence !== undefined
+            ? { recurrence: input.recurrence }
+            : {}),
+          ...(input.assigneeIds !== undefined
+            ? { assigneeIds: input.assigneeIds }
+            : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        },
+      });
     });
 
     await writeAuditLog({
@@ -155,7 +181,7 @@ export async function PATCH(
         rewardAmount: updated.rewardAmount.toString(),
       },
       200,
-      "Chore updated"
+      "Chore updated",
     );
   } catch (error) {
     return handleRouteError(error);
@@ -168,7 +194,7 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;

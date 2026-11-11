@@ -1,10 +1,6 @@
-// Sample help copy for Pudding. Written here so every topic, article list and
-// article has real text. Nothing is loaded from the network.
-
 export type Section = { title: string; body: string };
 export type Article = { slug: string; title: string; sections: Section[] };
 export type Topic = { slug: string; title: string; articles: Article[] };
-
 function art(title: string, sections: [string, string][]): Article {
   return {
     slug: title
@@ -13,39 +9,47 @@ function art(title: string, sections: [string, string][]): Article {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, ""),
     title,
-    sections: sections.map(([t, b]) => ({ title: t, body: b })),
+    sections: sections.map(([title, body]) => ({ title, body })),
   };
 }
-
 export const TOPICS: Topic[] = [
   {
     slug: "account",
     title: "Account",
     articles: [
       art("Account recovery claim process", [
-        ["What happened?", "Lost access to your Pudding account? Here’s how to get it back, and what happens to your kids’ wallets while you wait."],
-        ["Why you can’t sign in", "Forgot your password, changed your phone number, or lost your device? Find out which one applies to you and what to try first."],
-        ["What happens after you submit", "We review every claim within 2 to 3 working days. You’ll get an update by email and a push notification once it’s decided."],
-      ]),
-      art("Change your email address", [
-        ["Before you start", "You need to be signed in on a device you trust. We send a 6-digit code to your new email to confirm it’s yours."],
-        ["How to change it", "Open Accounts, tap your name, then Email. Enter the new address and the code we send you."],
-        ["What stays the same", "Your kids, wallets and spending limits don’t change. Only the address we use to reach you does."],
+        [
+          "Recover your account",
+          "Open parent login and choose Forgot password. Request an email code, then choose a new password.",
+        ],
+        [
+          "During local testing",
+          "Email delivery is disabled in development. The verification screen shows the development code returned by the API.",
+        ],
+        [
+          "Need more help?",
+          "A signed-in parent can save a support request from Accounts. The demo does not contact an external support team.",
+        ],
       ]),
       art("Reset your password", [
-        ["When to use this", "Use it if you forgot your password or think someone else knows it."],
-        ["How it works", "Choose Forgot password on the sign-in screen. We email you a code, then you pick a new password."],
-        ["After the reset", "You’ll be signed out of other devices. Sign in again with the new password."],
+        [
+          "Start a reset",
+          "Choose Forgot password on parent login, enter your email and request a code.",
+        ],
+        [
+          "Finish",
+          "Enter the newest six-digit code and a password with at least eight characters. Then sign in using that password.",
+        ],
       ]),
       art("Update your profile", [
-        ["What your kids see", "Your kids see your name and your picture in their app, so they know who approved a purchase."],
-        ["How to edit", "Open Accounts and tap your name. Change the name or tap the pencil on your picture to pick a new one."],
-        ["When it changes", "New details show up in your kids’ app the next time they open it."],
-      ]),
-      art("Delete your account", [
-        ["Before you delete", "Deleting your account also removes your kids’ accounts and wallets. Spend or move any balance first."],
-        ["How to delete", "Open Accounts, then Security & Privacy, then Delete account. We ask for your password to confirm."],
-        ["What we keep", "We keep payment records for the period the law requires. Everything else is removed within 30 days."],
+        [
+          "Your name and avatar",
+          "Open Accounts, then Edit your profile. Save your name and choose an avatar. Your existing details are prefilled.",
+        ],
+        [
+          "Child profiles",
+          "Use Manage children to edit a child's name, avatar or date of birth.",
+        ],
       ]),
     ],
   },
@@ -54,24 +58,38 @@ export const TOPICS: Topic[] = [
     title: "Kids & Wallets",
     articles: [
       art("Add a kid", [
-        ["Who can be added", "Kids from 6 to 18 years old. Add a first name, last name and date of birth."],
-        ["How to add one", "Open Accounts, then Manage kids, then Add kid. You can add more than one in a row."],
-        ["What your kid does next", "Your kid signs in with the username you pick and a 6-digit PIN."],
+        [
+          "Who can be added",
+          "Children aged 6–18. Enter first name, last name and date of birth.",
+        ],
+        [
+          "Activation",
+          "After the primary parent saves a Sandbox PayPal wallet, open Family and activate the child's wallet. Pudding provides their generated username and six-digit PIN.",
+        ],
+        [
+          "Spend allowance",
+          "A parent allocates part of the internal family budget to the child's Spend wallet. This does not transfer money through PayPal.",
+        ],
       ]),
       art("Set a daily spend limit", [
-        ["What a limit does", "A daily limit caps how much your kid can spend in one day. Anything above it needs your approval."],
-        ["How to set it", "Open your kid’s wallet, tap Limits and enter an amount in dollars."],
-        ["Changing it later", "You can raise or lower the limit at any time. The new amount applies from the next purchase."],
-      ]),
-      art("Approve or decline a purchase", [
-        ["How requests reach you", "When your kid scans an invoice, you get a notification with the items and the total."],
-        ["What you see", "The products, quantities, total and a short reason explaining why it needs your approval."],
-        ["Your answer", "Tap Approve to let it go through, or Decline to stop it. Your kid sees the result right away."],
+        [
+          "Daily controls",
+          "Open Family, tap Manage beside your child, and save a daily limit. Set 0 to ask the parent for every purchase.",
+        ],
+        [
+          "AI and parent review",
+          "Inside a positive limit, AI reviews the invoice. Purchases above a daily, weekly or per-purchase threshold go to the parent. Child usage periods use UTC; the shared family limit never resets.",
+        ],
       ]),
       art("Reset a kid’s PIN", [
-        ["If your kid forgets", "You can set a new PIN without knowing the old one."],
-        ["How to reset", "Open your kid’s profile, tap Security, then Reset PIN. Pick 6 new digits."],
-        ["Tell your kid", "Your kid uses the new PIN the next time they sign in."],
+        [
+          "Where to reset",
+          "Open Family, tap Manage beside your child, then Set or reset login PIN. Enter your parent PIN and choose six new digits.",
+        ],
+        [
+          "Signing in",
+          "The child uses their generated username and the new PIN. Resetting also clears a PIN lockout.",
+        ],
       ]),
     ],
   },
@@ -80,50 +98,86 @@ export const TOPICS: Topic[] = [
     title: "Payments & Transactions",
     articles: [
       art("How payments work", [
-        ["Paying with PayPal", "Pudding uses PayPal to move money. You add funds from your PayPal account."],
-        ["When money moves", "Money leaves your account only after you approve a purchase."],
-        ["Where to see it", "Every payment appears in your transaction list with the date, amount and your kid’s name."],
+        [
+          "Create an invoice",
+          "The child captures anything using the camera. The demo creates a random invoice from its sample catalog. It does not read a real store's QR code or pay that store.",
+        ],
+        [
+          "Review",
+          "AI can approve or block an invoice inside the child's controls. Otherwise the parent reviews it. AI unavailability also sends it to the parent.",
+        ],
+        [
+          "Payment",
+          "An approval triggers a separate PayPal Sandbox payment using the primary parent's saved wallet. The invoice is marked paid only after a completed capture.",
+        ],
       ]),
       art("A payment is pending", [
-        ["What pending means", "The purchase is waiting for your approval or for PayPal to confirm it."],
-        ["How long it takes", "Most payments clear within a few minutes. Some can take up to one working day."],
-        ["If it stays pending", "Check your PayPal account. If it’s still stuck after a day, contact us from Support."],
+        [
+          "Reserved allowance",
+          "If PayPal's result is not confirmed, the app holds capacity for that invoice so it cannot be spent twice.",
+        ],
+        [
+          "Check confirmation",
+          "Open the invoice and choose Check payment confirmation. A known order may also be confirmed by a verified webhook or reconciliation job.",
+        ],
+        [
+          "Unknown outcome",
+          "If the app asks for manual confirmation, check the Sandbox merchant's order history before retrying. Do not create a replacement purchase to work around an uncertain charge.",
+        ],
       ]),
-      art("Report a wrong charge", [
-        ["What to check first", "Open the transaction and look at the items. A scanned invoice lists every product."],
-        ["How to report", "Tap the transaction, then Report a problem. Tell us what looks wrong."],
-        ["What happens next", "We look into it within 2 to 3 working days and update you by email."],
-      ]),
-      art("Download your statements", [
-        ["What’s included", "Each statement lists every payment for the month in dollars and cents."],
-        ["How to get one", "Open Accounts, then Payments, then Statements. Pick a month."],
-        ["Format", "Statements download as a PDF you can save or print."],
+      art("Approve or decline a purchase", [
+        [
+          "Your approval queue",
+          "Open Family, then Approvals. Choose an invoice to see its products, quantities, prices and total.",
+        ],
+        [
+          "Your decision",
+          "Approve & pay uses the saved primary-parent Sandbox wallet. Decline does not make a payment. An AI-blocked invoice cannot be overridden in this demo.",
+        ],
+        [
+          "Activity",
+          "Open Family activity, or the child's Money tab, to see recorded purchases and virtual wallet activity.",
+        ],
       ]),
     ],
   },
   {
     slug: "subscriptions-and-billing",
-    title: "Subscriptions & Billing",
+    title: "Spending limits",
     articles: [
-      art("Your plan", [
-        ["What’s on your plan", "Your plan decides how many kids you can add and which features you get."],
-        ["See your plan", "Open Accounts, then Preferences, then Plan."],
-        ["Sibling discount", "Adding more than one child lowers the price per kid on your plan."],
+      art("Your family limit", [
+        [
+          "What a top-up does",
+          "A top-up increases the internal spending limit shared by all children on one account. It does not deposit money into Pudding.",
+        ],
+        [
+          "Accumulated use",
+          "Completed purchases permanently consume part of the limit. It does not reset monthly or yearly. Parents can add another top-up to authorize more spending.",
+        ],
+        [
+          "No subscription",
+          "The hackathon demo does not charge a monthly or yearly Pudding subscription.",
+        ],
       ]),
-      art("Change or cancel your plan", [
-        ["Changing", "Pick a new plan and the change starts on your next billing date."],
-        ["Cancelling", "Choose Cancel plan. You keep your features until the end of the period you paid for."],
-        ["Your kids’ wallets", "Wallets stay open after you cancel, but spending is paused until you pick a plan again."],
+      art("Increase your limit", [
+        [
+          "Add a top-up",
+          "Open Family, tap Top up, enter the amount and confirm with your parent PIN. The increased limit is saved on the server.",
+        ],
+        [
+          "Allocate allowance",
+          "Open Manage for a child to allocate Spend allowance from the internal unallocated family budget.",
+        ],
       ]),
       art("Update your payment method", [
-        ["Why update it", "Do this if your card expired or you want to use a different PayPal account."],
-        ["How to update", "Open Accounts, then Billing, then Payment method."],
-        ["Next charge", "The new method is used from your next billing date."],
-      ]),
-      art("Billing dates and receipts", [
-        ["When you’re charged", "You’re charged on the same day each month, starting the day you joined."],
-        ["Receipts", "A receipt is emailed after every charge. You can also find it under Billing."],
-        ["Failed charges", "If a charge fails we try again after 3 days and email you each time."],
+        [
+          "Save a wallet",
+          "Open Accounts, then PayPal wallet. Link a supported Sandbox PayPal account and approve saving its wallet.",
+        ],
+        [
+          "Authorize again",
+          "If a saved wallet needs authorization again, choose Save wallet again. A successful wallet setup replaces the saved payment token after approval.",
+        ],
       ]),
     ],
   },
@@ -131,20 +185,39 @@ export const TOPICS: Topic[] = [
     slug: "safety-and-security",
     title: "Safety & Security",
     articles: [
-      art("How we keep kids safe", [
-        ["You’re in control", "Your kid can’t spend above the daily limit without your approval."],
-        ["Private by default", "We only ask for the details we need. Your kid’s name and date of birth are not shared with shops."],
-        ["Always visible", "Every purchase and approval is recorded in your history."],
+      art("Your parent PIN", [
+        [
+          "Create or change",
+          "Create your six-digit parent PIN during setup. Change or reset it from Accounts, then Security & PIN, using your account password.",
+        ],
+        [
+          "Keep it private",
+          "The parent PIN confirms top-ups and child activation. It is separate from each child's login PIN.",
+        ],
       ]),
-      art("Set up extra security", [
-        ["Security questions", "Pick questions only you can answer. We ask them if you ever need to recover your account."],
-        ["Notifications", "Turn on notifications so you see approval requests as soon as they arrive."],
-        ["Where to find it", "Open Accounts, then Security & Privacy."],
+      art("How we keep kids safe", [
+        [
+          "Your controls",
+          "Manage child limits or pause spending from Family. A paused wallet cannot make a new purchase payment.",
+        ],
+        [
+          "Family privacy",
+          "Children see their own wallet and invoices. They cannot access another child's private data or the family spending-limit totals.",
+        ],
+        [
+          "Notifications",
+          "Connect browser push from Accounts, then Notification preferences, or use the in-app inbox.",
+        ],
       ]),
       art("Spot a suspicious message", [
-        ["What we never ask for", "We never ask for your password or full PIN by email, text or chat."],
-        ["What to do", "Don’t tap links in a message you didn’t expect. Open the Pudding app yourself instead."],
-        ["Tell us", "Forward the message through Support and we’ll look into it."],
+        [
+          "Protect credentials",
+          "Do not share passwords, full PINs or PayPal payment tokens in messages.",
+        ],
+        [
+          "Open the app directly",
+          "Use your known Pudding address to review purchases and settings.",
+        ],
       ]),
     ],
   },
@@ -153,29 +226,48 @@ export const TOPICS: Topic[] = [
     title: "Troubleshooting",
     articles: [
       art("The code didn’t arrive", [
-        ["Check the basics", "Look in your spam folder and make sure the email address is right."],
-        ["Ask for a new code", "Wait 30 seconds, then tap Resend. Only the newest code works."],
-        ["Still nothing", "Try a different network, or contact us from Support."],
-      ]),
-      art("The app is slow or stuck", [
-        ["First steps", "Close the app and open it again. Check that you’re online."],
-        ["Update", "Make sure you have the latest version of your browser or app."],
-        ["If it keeps happening", "Tell us which screen it happens on and what you tapped."],
+        [
+          "Development mode",
+          "In local development, emails are intentionally disabled. Use the development OTP shown on the verification screen.",
+        ],
+        [
+          "Resend",
+          "Request a new code if needed. Only the newest active code works, and repeated requests are rate limited.",
+        ],
       ]),
       art("A scan won’t work", [
-        ["Good conditions", "Hold the phone steady in good light. Keep the whole invoice in view."],
-        ["Camera access", "Allow camera access when your phone asks. You can turn it on later in your phone settings."],
-        ["Try again", "If the scan still fails, ask a parent to add the purchase by hand."],
+        [
+          "Camera access",
+          "Use localhost or an HTTPS tunnel and allow camera permission in the browser.",
+        ],
+        [
+          "Capture anything",
+          "The hackathon demo does not require a specific QR. A camera capture triggers a random catalog invoice.",
+        ],
+        [
+          "Try again",
+          "If access was denied, allow it in browser settings and tap Retry camera.",
+        ],
+      ]),
+      art("AI review is unavailable", [
+        [
+          "What happens",
+          "The invoice is sent to the parent for review with an explanation. The app does not invent an AI approval.",
+        ],
+        [
+          "Developer configuration",
+          "Gemini needs to be available within the project quota. A parent can continue reviewing purchases if it is unavailable.",
+        ],
       ]),
     ],
   },
 ];
-
 export function findTopic(slug: string) {
   return TOPICS.find((t) => t.slug === slug);
 }
-
 export function findArticle(topic: string, slug: string) {
   const t = findTopic(topic);
-  return t ? { topic: t, article: t.articles.find((a) => a.slug === slug) } : null;
+  return t
+    ? { topic: t, article: t.articles.find((a) => a.slug === slug) }
+    : null;
 }

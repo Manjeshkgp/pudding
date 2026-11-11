@@ -34,7 +34,8 @@ export default function DoneScreen() {
             Let the fun begin!
           </h1>
           <p className="text-[17px] leading-[25px] tracking-[-0.17px] text-black">
-            Everything is in place. Your little one is ready for their money adventure.
+            Your parent account is ready. Activate your child’s wallet and set
+            their allowance to begin.
           </p>
         </motion.div>
       </div>
@@ -42,7 +43,7 @@ export default function DoneScreen() {
       <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[402px] px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
         <div className="rounded-3xl bg-[#f3f3f3]">
           <Link
-            href="/"
+            href="/family"
             className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium tracking-[-0.17px] text-white"
           >
             Bring it on!

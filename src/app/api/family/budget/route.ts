@@ -2,11 +2,7 @@ import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import {
-  apiSuccess,
-  handleRouteError,
-  validateBody,
-} from "@/lib/api-response";
+import { apiSuccess, handleRouteError, validateBody } from "@/lib/api-response";
 import { requireParent } from "@/lib/auth-guard";
 import { addVirtualFamilyBudget } from "@/services/ledger.service";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
@@ -40,7 +36,9 @@ export async function GET(req: NextRequest) {
         prisma.spendingRequest.aggregate({
           where: {
             familyId: family.id,
-            status: { in: ["PENDING_APPROVAL", "APPROVED", "PAID_PENDING_CLAIM"] },
+            status: {
+              in: ["PENDING_APPROVAL", "APPROVED", "PAID_PENDING_CLAIM"],
+            },
           },
           _sum: { amount: true },
         }),
@@ -65,10 +63,9 @@ export async function GET(req: NextRequest) {
       if (child.wallet) {
         allocatedInBuckets = allocatedInBuckets
           .plus(child.wallet.spendBalance)
-          .plus(child.wallet.saveBalance)
-          .plus(child.wallet.giveBalance);
+          .plus(child.wallet.saveBalance);
         lockedPendingInWallets = lockedPendingInWallets.plus(
-          child.wallet.lockedPendingBalance
+          child.wallet.lockedPendingBalance,
         );
       }
     }
@@ -101,7 +98,7 @@ export async function GET(req: NextRequest) {
         avatar: c.avatar,
         spendBalance: c.wallet?.spendBalance.toString() ?? "0.00",
         saveBalance: c.wallet?.saveBalance.toString() ?? "0.00",
-        giveBalance: c.wallet?.giveBalance.toString() ?? "0.00",
+
         lockedPendingBalance:
           c.wallet?.lockedPendingBalance.toString() ?? "0.00",
       })),
@@ -167,7 +164,7 @@ export async function POST(req: NextRequest) {
         idempotentReplay: result.idempotentReplay,
       },
       result.idempotentReplay ? 200 : 201,
-      "Virtual family budget updated"
+      "Virtual family budget updated",
     );
   } catch (error) {
     return handleRouteError(error);

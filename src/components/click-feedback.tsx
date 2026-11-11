@@ -11,12 +11,14 @@ const TAPPABLE =
 export default function ClickFeedback() {
   useEffect(() => {
     let ctx: AudioContext | null = null;
+    let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
     function tick() {
       try {
         const Ctor =
           window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
         if (!Ctor) return;
         ctx ??= new Ctor();
         if (ctx.state === "suspended") void ctx.resume();
@@ -31,6 +33,10 @@ export default function ClickFeedback() {
         gain.gain.exponentialRampToValueAtTime(0.035, t + 0.012);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
         osc.connect(gain).connect(ctx.destination);
+        osc.onended = () => {
+          osc.disconnect();
+          gain.disconnect();
+        };
         osc.start(t);
         osc.stop(t + 0.1);
       } catch {}
@@ -39,16 +45,25 @@ export default function ClickFeedback() {
     function onClick(e: MouseEvent) {
       const el = (e.target as Element | null)?.closest?.(TAPPABLE);
       if (!el) return;
-      if ((el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true") return;
-      tick();
-      try {
-        navigator.vibrate?.(6);
-      } catch {}
+      if (
+        (el as HTMLButtonElement).disabled ||
+        el.getAttribute("aria-disabled") === "true"
+      )
+        return;
+      // Keep AudioContext setup out of the capture phase of navigation clicks.
+      if (feedbackTimer) clearTimeout(feedbackTimer);
+      feedbackTimer = setTimeout(() => {
+        tick();
+        try {
+          navigator.vibrate?.(6);
+        } catch {}
+      }, 0);
     }
 
     document.addEventListener("click", onClick, true);
     return () => {
       document.removeEventListener("click", onClick, true);
+      if (feedbackTimer) clearTimeout(feedbackTimer);
       void ctx?.close();
     };
   }, []);

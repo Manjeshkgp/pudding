@@ -1,77 +1,203 @@
 "use client";
-
+import { ListEnd, usePagedList } from "@/components/paged-list";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import ScrollHeader from "@/components/scroll-header";
-import { AVATARS } from "@/components/avatar-sheet";
-import { BackPill, EmptyState, InvitationsPill, readInvites, type Invite } from "@/components/coparent-parts";
-
-// Parent flow: co-parent home. Empty until an invite has been sent in the invite screen.
+import {
+  AppScreen,
+  Card,
+  Button,
+  Status,
+  Empty,
+  ActionLink,
+  useRemote,
+  useAction,
+} from "@/components/app-ui";
+import { Me } from "@/lib/app-types";
+import { patchApi, deleteApi, postApi } from "@/lib/client-api";
+type CoParent = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  permissionLevel: string;
+};
+type Invite = {
+  id: string;
+  email: string;
+  name: string;
+  inviteToken?: string;
+  status: "PENDING" | "EXPIRED";
+  expiresAt: string;
+};
 export default function CoparentScreen() {
   const router = useRouter();
-  const [invites, setInvites] = useState<Invite[] | null>(null);
-  useEffect(() => setInvites(readInvites()), []);
-
-  if (invites === null) return <main className="min-h-dvh bg-white" />;
-
-  if (invites.length === 0) {
-    return (
-      <main className="min-h-dvh bg-white">
-        <div className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col pt-[max(16px,env(safe-area-inset-top))]">
-          <div className="flex items-center justify-between px-4">
-            <BackPill />
-            <InvitationsPill />
-          </div>
-          <EmptyState text="No co-parent here" />
-        </div>
-      </main>
+  const remote = useRemote<{ parents: CoParent[] }>(
+    "/api/family/co-parents?view=parents",
+  );
+  const me = useRemote<Me>("/api/auth/me");
+  const action = useAction();
+  const [removing, setRemoving] = useState("");
+  const owner = me.data?.user?.role === "PRIMARY_PARENT";
+  const invites = usePagedList<Invite>(
+    owner ? "/api/family/co-parents?view=invites" : null,
+  );
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const next = invites.items.reduce((earliest, invite) => {
+      const end = Date.parse(invite.expiresAt);
+      return invite.status === "PENDING" && end > now
+        ? Math.min(earliest, end)
+        : earliest;
+    }, Infinity);
+    if (!Number.isFinite(next)) return;
+    const timeout = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.max(1, next - Date.now()),
     );
-  }
+    return () => window.clearTimeout(timeout);
+  }, [invites.items, now]);
 
+  function resend(id: string) {
+    void action.run(async () => {
+      const result = await postApi<{
+        invite: { email: string; inviteAcceptUrl: string };
+        delivery: { delivered: boolean };
+      }>(`/api/family/co-parents/${id}/resend`, {});
+      const link = new URL(result.invite.inviteAcceptUrl);
+      sessionStorage.setItem(
+        "pudding-last-invite",
+        JSON.stringify({
+          email: result.invite.email,
+          url: `${window.location.origin}${link.pathname}${link.search}`,
+          delivered: result.delivery.delivered,
+        }),
+      );
+      router.push("/coparent/sent");
+    });
+  }
   return (
-    <main className="min-h-dvh bg-white">
-      <div className="mx-auto w-full max-w-[520px] pb-[190px]">
-        <ScrollHeader title="Co-parent" left={<BackPill />} right={<InvitationsPill />} />
-        <div className="flex flex-col gap-4 px-4">
-          {invites.map((inv, i) => (
-            <div
-              key={`${inv.email}-${i}`}
-              className="flex h-[100px] items-center gap-3 rounded-3xl border border-[#e8e8e8] px-5 py-3.5"
+    <AppScreen title="Co-parent" role="USER">
+      <Status
+        loading={remote.loading || me.loading || invites.loading}
+        error={remote.error || me.error || invites.error || action.error}
+        notice={action.notice}
+      />
+      <p>Share the day-to-day care of your family's money habits.</p>
+      {owner && <ActionLink href="/coparent/add">Add a co-parent</ActionLink>}
+      {remote.data?.parents.filter((p) => p.role === "CO_PARENT").length ===
+        0 && <Empty>No co-parent has joined your family yet.</Empty>}
+      {remote.data?.parents
+        .filter((p) => p.role === "CO_PARENT")
+        .map((p) => (
+          <Card key={p.id}>
+            <h2 className="font-display text-xl font-bold">{p.name}</h2>
+            <p>{p.email}</p>
+            <p>
+              {p.permissionLevel === "EQUAL"
+                ? "Full family access"
+                : "Limited family access"}
+            </p>
+            {owner && (
+              <>
+                <Button
+                  secondary
+                  busy={action.busy}
+                  onClick={() =>
+                    void action.run(async () => {
+                      await patchApi("/api/family/co-parents", {
+                        coParentUserId: p.id,
+                        permissionLevel:
+                          p.permissionLevel === "EQUAL" ? "LIMITED" : "EQUAL",
+                      });
+                      remote.reload();
+                    }, "Access updated.")
+                  }
+                >
+                  {p.permissionLevel === "EQUAL"
+                    ? "Switch to limited access"
+                    : "Give full access"}
+                </Button>
+                {removing === p.id ? (
+                  <>
+                    <p>Remove {p.name} from this family?</p>
+                    <Button
+                      busy={action.busy}
+                      onClick={() =>
+                        void action.run(async () => {
+                          await deleteApi(
+                            `/api/family/co-parents?coParentUserId=${p.id}`,
+                          );
+                          setRemoving("");
+                          remote.reload();
+                        }, "Co-parent removed.")
+                      }
+                    >
+                      Confirm removal
+                    </Button>
+                    <Button secondary onClick={() => setRemoving("")}>
+                      Keep co-parent
+                    </Button>
+                  </>
+                ) : (
+                  <Button secondary onClick={() => setRemoving(p.id)}>
+                    Remove co-parent
+                  </Button>
+                )}
+              </>
+            )}
+          </Card>
+        ))}
+      {invites.items.map((i) => {
+        const expired =
+          i.status === "EXPIRED" || Date.parse(i.expiresAt) <= now;
+        return (
+          <Card key={i.id}>
+            <p className="font-semibold">{i.name}</p>
+            <p>{i.email}</p>
+            <p className="text-sm text-[#5e5e5e]">
+              {expired
+                ? "Invitation expired"
+                : `Expires ${new Date(i.expiresAt).toLocaleString()}`}
+            </p>
+            {expired ? (
+              <Button busy={action.busy} onClick={() => resend(i.id)}>
+                Resend invite
+              </Button>
+            ) : (
+              i.inviteToken && (
+                <Button
+                  secondary
+                  busy={action.busy}
+                  onClick={() =>
+                    void action.run(async () => {
+                      await navigator.clipboard.writeText(
+                        `${window.location.origin}/accept-invite?token=${i.inviteToken}`,
+                      );
+                    }, "Invitation link copied.")
+                  }
+                >
+                  Copy invitation link
+                </Button>
+              )
+            )}
+            <Button
+              secondary
+              busy={action.busy}
+              onClick={() =>
+                void action.run(async () => {
+                  await deleteApi(`/api/family/co-parents?inviteId=${i.id}`);
+                  invites.updateItems((items) =>
+                    items.filter((item) => item.id !== i.id),
+                  );
+                }, "Invitation removed.")
+              }
             >
-              <div className="relative size-[52px] shrink-0 overflow-hidden rounded-full bg-[#ffc091]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={AVATARS[0].src}
-                  alt=""
-                  className="absolute left-[-3.21px] top-[6.43px] size-[63.778px] max-w-none"
-                />
-              </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <p className="truncate text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">
-                  {inv.email}
-                </p>
-                <p className="text-[15px] leading-[22px] tracking-[-0.15px] text-[#4b4b4b]">Invite sent</p>
-              </div>
-              <p className="shrink-0 text-[15px] leading-[22px] tracking-[-0.15px] text-[#4b4b4b]">{inv.date}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="fixed inset-x-0 bottom-0 z-10 mx-auto flex w-full max-w-[520px] flex-col gap-2.5 bg-gradient-to-t from-white from-70% to-white/0 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-6">
-        <button
-          type="button"
-          onClick={() => router.push("/coparent/add")}
-          className="flex h-[52px] w-full items-center justify-center rounded-full bg-[#e8e8e8] px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black"
-        >
-          Add more
-        </button>
-        <button
-          type="button"
-          className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
-        >
-          Edit
-        </button>
-      </div>
-    </main>
+              Remove invitation
+            </Button>
+          </Card>
+        );
+      })}
+      <ListEnd list={invites} />
+    </AppScreen>
   );
 }

@@ -27,7 +27,7 @@ const DEFAULT_BADGES: SeedBadge[] = [
   {
     code: "BUDGET_BOSS",
     name: "Budget Boss",
-    description: "Learned how to plan a Spend, Save, and Give budget!",
+    description: "Learned how to plan a Spend and Save budget!",
     icon: "pie-chart",
     xpBonus: 75,
   },
@@ -96,7 +96,8 @@ const DEFAULT_LESSONS: SeedLesson[] = [
           "Money in your Save bucket is kept safe so you can reach bigger goals!",
       },
       {
-        question: "If you save $2 every week, how much will you have in 5 weeks?",
+        question:
+          "If you save $2 every week, how much will you have in 5 weeks?",
         options: ["$5", "$10", "$20"],
         correctIndex: 1,
         explanation: "$2 x 5 weeks = $10 saved!",
@@ -156,14 +157,13 @@ const DEFAULT_LESSONS: SeedLesson[] = [
     topic: "BUDGETING",
     ageGroup: "AGE_10_13",
     summary:
-      "Discover how splitting your money into Spend, Save, and Give buckets gives you total control.",
+      "Discover how splitting your money into Spend and Save buckets gives you total control.",
     content: {
       story:
-        "A budget isn't about restricting your fun—it's a game plan for your money! With 70% in Spend, 20% in Save, and 10% in Give, you can enjoy today, build for tomorrow, and help others.",
+        "A budget isn't about restricting your fun—it's a game plan for your money! With 70% in Spend and 30% in Save, you can enjoy today and build for tomorrow.",
       keyTakeaways: [
         "Spend bucket: for everyday fun and approved purchases.",
         "Save bucket: for long-term goals and emergencies.",
-        "Give bucket: for helping charities and causes you care about.",
       ],
     },
     quizQuestions: [

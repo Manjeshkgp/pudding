@@ -1,3 +1,10 @@
+import { getJwtSecretKey } from "@/lib/auth-secret";
+import {
+  claimFromState,
+  parseNavigationClaim,
+  SessionNavigationClaim,
+} from "@/lib/navigation-claims";
+import type { NavigationState } from "@/lib/navigation-policy";
 import { SignJWT, jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { CoParentPermissionLevel, UserRole } from "@prisma/client";
@@ -14,24 +21,25 @@ export interface SessionPayload {
   permissionLevel?: CoParentPermissionLevel;
   email?: string;
   name: string;
-}
-
-function getJwtSecretKey(): Uint8Array {
-  const secret =
-    process.env.JWT_SECRET || "goodspend-default-dev-secret-key-32-chars-min";
-  return new TextEncoder().encode(secret);
+  navigation?: SessionNavigationClaim;
+  exp?: number;
 }
 
 export async function signSessionToken(
   payload: SessionPayload,
-  expiresIn?: string
+  expiresIn?: string | number,
+  currentState?: NavigationState,
 ): Promise<string> {
+  const { accountNavigationState } = await import("@/lib/onboarding");
+  const state = currentState || (await accountNavigationState(payload));
+  if (!state) throw new Error("Cannot create a session for a missing account.");
+  const navigation = claimFromState(state);
   const defaultExpiry =
     payload.subjectType === "CHILD"
       ? process.env.CHILD_SESSION_EXPIRES_IN || "30d"
       : process.env.PARENT_SESSION_EXPIRES_IN || "7d";
 
-  return new SignJWT({ ...payload })
+  return new SignJWT({ ...payload, purpose: "SESSION", navigation })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -40,11 +48,22 @@ export async function signSessionToken(
 }
 
 export async function verifySessionToken(
-  token: string
+  token: string,
 ): Promise<SessionPayload | null> {
+  const key = getJwtSecretKey();
   try {
-    const { payload } = await jwtVerify(token, getJwtSecretKey());
-    if (!payload.sub || !payload.subjectType || !payload.role) {
+    const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
+    if (
+      !payload.sub ||
+      !["USER", "CHILD"].includes(String(payload.subjectType)) ||
+      !Number.isFinite(payload.exp) ||
+      (payload.subjectType === "CHILD"
+        ? payload.role !== "CHILD"
+        : !["PRIMARY_PARENT", "CO_PARENT", "ADMIN"].includes(
+            String(payload.role),
+          )) ||
+      (payload.purpose && payload.purpose !== "SESSION")
+    ) {
       return null;
     }
     return {
@@ -57,6 +76,11 @@ export async function verifySessionToken(
         | undefined,
       email: payload.email ? String(payload.email) : undefined,
       name: String(payload.name || ""),
+      exp: payload.exp,
+      navigation: parseNavigationClaim(
+        payload.navigation,
+        payload.subjectType as SessionSubjectType,
+      ),
     };
   } catch {
     return null;
@@ -66,7 +90,8 @@ export async function verifySessionToken(
 export function setSessionCookie(
   response: NextResponse,
   token: string,
-  subjectType: SessionSubjectType
+  subjectType: SessionSubjectType,
+  expiresAt?: number,
 ): void {
   const maxAgeSeconds =
     subjectType === "CHILD" ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7;
@@ -76,7 +101,12 @@ export function setSessionCookie(
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: maxAgeSeconds,
+    maxAge: expiresAt
+      ? Math.max(
+          0,
+          Math.min(maxAgeSeconds, expiresAt - Math.floor(Date.now() / 1000)),
+        )
+      : maxAgeSeconds,
   });
 }
 
@@ -91,7 +121,7 @@ export function clearSessionCookie(response: NextResponse): void {
 }
 
 export async function getSessionFromRequest(
-  req: NextRequest
+  req: NextRequest,
 ): Promise<SessionPayload | null> {
   // Check Authorization Bearer header first, then HTTP-only cookie
   const authHeader = req.headers.get("authorization");

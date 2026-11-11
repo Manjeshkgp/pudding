@@ -1,5 +1,8 @@
-import ConnectingScreen from "@/components/connecting-screen";
-
-export default function Page() {
-  return <ConnectingScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/connecting", await searchParams);
 }

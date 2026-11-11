@@ -7,19 +7,19 @@ import {
   handleRouteError,
   validateBody,
 } from "@/lib/api-response";
-import {
-  requireChildOrFamilyParent,
-  requireParent,
-} from "@/lib/auth-guard";
+import { requireChildOrFamilyParent, requireParent } from "@/lib/auth-guard";
 import { STANDARD_SPENDING_CATEGORIES } from "@/services/spending-rules.service";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
 const updateSpendingRuleSchema = z.object({
   maxPerTransaction: z.number().positive().max(10000).nullable().optional(),
-  dailyLimit: z.number().positive().max(10000).nullable().optional(),
+  dailyLimit: z.number().min(0).max(10000).nullable().optional(),
   weeklyLimit: z.number().positive().max(25000).nullable().optional(),
   monthlyLimit: z.number().positive().max(50000).nullable().optional(),
   autoApproveUnderAmount: z.number().min(0).max(1000).nullable().optional(),
+  inStoreEnabled: z.boolean().optional(),
+  onlineEnabled: z.boolean().optional(),
+  ageBlockEnabled: z.boolean().optional(),
   autoApproveCategories: z.array(z.string().trim().min(1)).optional(),
   safeListMerchants: z.array(z.string().trim().min(1)).optional(),
   requireApprovalCategories: z.array(z.string().trim().min(1)).optional(),
@@ -31,7 +31,7 @@ const updateSpendingRuleSchema = z.object({
  */
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
@@ -58,6 +58,9 @@ export async function GET(
       availableCategories: STANDARD_SPENDING_CATEGORIES,
       rule: {
         id: rule.id,
+        inStoreEnabled: rule.inStoreEnabled,
+        onlineEnabled: rule.onlineEnabled,
+        ageBlockEnabled: rule.ageBlockEnabled,
         maxPerTransaction: rule.maxPerTransaction?.toString() ?? null,
         dailyLimit: rule.dailyLimit?.toString() ?? null,
         weeklyLimit: rule.weeklyLimit?.toString() ?? null,
@@ -81,14 +84,11 @@ export async function GET(
  */
 export async function PUT(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
-    const { user, family } = await requireParent(
-      req,
-      "canManageSpendingRules"
-    );
+    const { user, family } = await requireParent(req, "canManageSpendingRules");
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, updateSpendingRuleSchema);
 
@@ -97,27 +97,37 @@ export async function PUT(
     });
 
     if (!child || child.familyId !== family.id) {
-      throw new ApiError(404, "Child not found in your family", "CHILD_NOT_FOUND");
+      throw new ApiError(
+        404,
+        "Child not found in your family",
+        "CHILD_NOT_FOUND",
+      );
     }
 
     const updated = await prisma.spendingRule.upsert({
       where: { childId: child.id },
       create: {
         childId: child.id,
+        inStoreEnabled: input.inStoreEnabled,
+        onlineEnabled: input.onlineEnabled,
+        ageBlockEnabled: input.ageBlockEnabled,
         maxPerTransaction: input.maxPerTransaction ?? null,
         dailyLimit: input.dailyLimit ?? null,
         weeklyLimit: input.weeklyLimit ?? null,
         monthlyLimit: input.monthlyLimit ?? null,
         autoApproveUnderAmount: input.autoApproveUnderAmount ?? null,
         autoApproveCategories: (input.autoApproveCategories ?? []).map((c) =>
-          c.toUpperCase()
+          c.toUpperCase(),
         ),
         safeListMerchants: input.safeListMerchants ?? [],
         requireApprovalCategories: (input.requireApprovalCategories ?? []).map(
-          (c) => c.toUpperCase()
+          (c) => c.toUpperCase(),
         ),
       },
       update: {
+        inStoreEnabled: input.inStoreEnabled,
+        onlineEnabled: input.onlineEnabled,
+        ageBlockEnabled: input.ageBlockEnabled,
         ...(input.maxPerTransaction !== undefined
           ? { maxPerTransaction: input.maxPerTransaction }
           : {}),
@@ -136,7 +146,7 @@ export async function PUT(
         ...(input.autoApproveCategories !== undefined
           ? {
               autoApproveCategories: input.autoApproveCategories.map((c) =>
-                c.toUpperCase()
+                c.toUpperCase(),
               ),
             }
           : {}),
@@ -146,7 +156,7 @@ export async function PUT(
         ...(input.requireApprovalCategories !== undefined
           ? {
               requireApprovalCategories: input.requireApprovalCategories.map(
-                (c) => c.toUpperCase()
+                (c) => c.toUpperCase(),
               ),
             }
           : {}),
@@ -185,7 +195,7 @@ export async function PUT(
         },
       },
       200,
-      `Spending limits and safe-list updated for ${child.name}`
+      `Spending limits and safe-list updated for ${child.name}`,
     );
   } catch (error) {
     return handleRouteError(error);

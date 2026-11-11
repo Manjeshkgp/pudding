@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import SetupExitButton from "@/components/setup-exit-button";
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
+import { getApi, postApi } from "@/lib/client-api";
 import Keypad from "@/components/keypad";
 
 // Parent flow, step 8: set up a 6-digit PIN, then confirm it.
 // Uses the on-screen number pad from Figma. States: empty, partly filled,
-// complete, confirm, loading and "PIN is not matching". Sample only: the PIN
-// stays on this screen and is never saved or sent anywhere.
+// complete, confirm, loading and mismatch. The parent PIN is hashed on the server.
 const LENGTH = 6;
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -21,17 +22,26 @@ export default function PinScreen() {
   const [first, setFirst] = useState("");
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [mismatch, setMismatch] = useState(false);
   const [toast, setToast] = useState<number | null>(null);
   const [me, setMe] = useState(0);
 
   const complete = pin.length === LENGTH;
+  useEffect(() => {
+    getApi<{ pinSet: boolean }>("/api/auth/parent/pin")
+      .then((r) => {
+        if (r.pinSet) router.replace("/family");
+      })
+      .catch((e) => setSaveError(e.message));
+  }, [router]);
 
   // The picture picked on the profile screen
   useEffect(() => {
     try {
       const saved = Number(sessionStorage.getItem("pudding-avatar"));
-      if (Number.isInteger(saved) && saved >= 0 && saved < AVATARS.length) setMe(saved);
+      if (Number.isInteger(saved) && saved >= 0 && saved < AVATARS.length)
+        setMe(saved);
     } catch {}
   }, []);
 
@@ -64,16 +74,21 @@ export default function PinScreen() {
       return;
     }
     setLoading(true);
-    window.setTimeout(() => {
-      if (pin === first) {
-        // Keep the spinner while the next screen opens
-        router.push("/done");
-        return;
-      }
+    if (pin !== first) {
       setLoading(false);
       setMismatch(true);
       setToast(Date.now());
-    }, 1200);
+      return;
+    }
+    postApi("/api/auth/parent/pin", { newPin: pin })
+      .then(() => {
+        router.replace("/family");
+        router.refresh();
+      })
+      .catch((e: unknown) => {
+        setSaveError(e instanceof Error ? e.message : "Unable to save PIN.");
+        setLoading(false);
+      });
   }
 
   // Keyboard on a computer
@@ -95,15 +110,7 @@ export default function PinScreen() {
     <main className="min-h-dvh bg-white">
       <div className="mx-auto flex h-dvh w-full max-w-[520px] flex-col overflow-hidden bg-white">
         <div className="flex items-center justify-end px-4 pb-2 pt-[max(20px,env(safe-area-inset-top))]">
-          <Link
-            href="/account"
-            aria-label="Account"
-            className="size-11 overflow-hidden rounded-full"
-            style={{ backgroundColor: AVATARS[me].bg }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={AVATARS[me].src} alt="" className="size-full" />
-          </Link>
+          <SetupExitButton />
         </div>
 
         <AnimatePresence>
@@ -149,6 +156,14 @@ export default function PinScreen() {
           </h1>
         </motion.header>
 
+        {saveError && (
+          <p role="alert" className="px-4 text-red-700">
+            {saveError}{" "}
+            <Link href="/account/security" className="underline">
+              Manage existing PIN
+            </Link>
+          </p>
+        )}
         {/* PIN dots */}
         <div className="min-h-0 flex-1 overflow-hidden pt-[18px]">
           <motion.div
@@ -164,7 +179,9 @@ export default function PinScreen() {
               <span
                 key={i}
                 className={`size-6 rounded-full border transition-colors ${
-                  i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#a6a6a6] bg-white"
+                  i < pin.length
+                    ? "border-[#e8e8e8] bg-black"
+                    : "border-[#a6a6a6] bg-white"
                 } ${mismatch ? "shadow-[0px_0px_0px_1px_#de1135]" : ""}`}
               />
             ))}

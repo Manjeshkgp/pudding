@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import CryingCatArt from "@/components/crying-cat-art";
 import TopBar from "@/components/top-bar";
 
-// Kid "forgot password". Kids can't reset on their own, a parent does it.
+// Kid "forgot PIN". Kids can't reset on their own, a parent does it.
 export default function KidForgotScreen() {
   const reduceMotion = useReducedMotion();
   return (
@@ -21,10 +21,10 @@ export default function KidForgotScreen() {
           className="mt-6 flex w-full max-w-[334px] flex-col gap-4 text-center"
         >
           <h1 className="font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-black">
-            Sorry, password reset isn&apos;t available here.
+            Sorry, PIN reset isn&apos;t available here.
           </h1>
           <p className="text-[17px] leading-[25px] tracking-[-0.17px] text-black">
-            Ask your parent to change your password from their account.
+            Ask your parent to change your PIN from their account.
           </p>
         </motion.div>
       </div>

@@ -1,5 +1,8 @@
-import DoneScreen from "@/components/done-screen";
-
-export default function Page() {
-  return <DoneScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/done", await searchParams);
 }

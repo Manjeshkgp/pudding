@@ -1,3 +1,4 @@
+import { assertSignupGuest } from "@/lib/parent-signup";
 import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -16,8 +17,21 @@ import { FULL_COPARENT_PERMISSIONS } from "@/lib/auth-guard";
 
 const parentSignupSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
-  avatar: z.enum(["avatar-1", "avatar-2", "avatar-3", "avatar-4", "avatar-5", "avatar-6"]).default("avatar-1"),
-  email: z.string().trim().email("Valid email address is required").toLowerCase(),
+  avatar: z
+    .enum([
+      "avatar-1",
+      "avatar-2",
+      "avatar-3",
+      "avatar-4",
+      "avatar-5",
+      "avatar-6",
+    ])
+    .default("avatar-1"),
+  email: z
+    .string()
+    .trim()
+    .email("Valid email address is required")
+    .toLowerCase(),
   phone: z
     .string()
     .trim()
@@ -38,13 +52,15 @@ const parentSignupSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    await assertSignupGuest(req);
     const { ipAddress, userAgent } = getRequestMeta(req);
 
     enforceRateLimit({
       key: `signup:${ipAddress}`,
       limit: 10,
       windowMs: 15 * 60 * 1000,
-      errorMessage: "Too many signup attempts from this IP. Please wait 15 minutes.",
+      errorMessage:
+        "Too many signup attempts from this IP. Please wait 15 minutes.",
     });
 
     const input = await validateBody(req, parentSignupSchema);
@@ -57,7 +73,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         409,
         "An account with this email already exists",
-        "EMAIL_ALREADY_EXISTS"
+        "EMAIL_ALREADY_EXISTS",
       );
     }
 
@@ -70,7 +86,7 @@ export async function POST(req: NextRequest) {
         throw new ApiError(
           409,
           "An account with this phone number already exists",
-          "PHONE_ALREADY_EXISTS"
+          "PHONE_ALREADY_EXISTS",
         );
       }
     }
@@ -133,7 +149,7 @@ export async function POST(req: NextRequest) {
           ipAddress,
           userAgent,
         },
-        tx
+        tx,
       );
 
       return { user, family };
@@ -173,7 +189,7 @@ export async function POST(req: NextRequest) {
         },
       },
       201,
-      "Parent account and family created successfully"
+      "Parent account and family created successfully",
     );
 
     setSessionCookie(response, token, "USER");

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BackButton from "@/components/back-button";
 import HelpLink from "@/components/help-link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -24,7 +25,11 @@ const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 const circle =
   "flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]";
 
-export default function ProfileScreen() {
+export default function ProfileScreen({
+  returnTo = "/onboarding/add-kid",
+}: {
+  returnTo?: string;
+}) {
   const router = useRouter();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
@@ -39,12 +44,15 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     let active = true;
-    getApi<{ subjectType: string; user?: { name: string; avatar: string } }>("/api/auth/me")
+    getApi<{ subjectType: string; user?: { name: string; avatar: string } }>(
+      "/api/auth/me",
+    )
       .then(({ subjectType, user }) => {
         if (!active || subjectType !== "USER" || !user) return;
         setName(user.name);
         const avatarIndex = Number(user.avatar.replace("avatar-", "")) - 1;
-        if (Number.isInteger(avatarIndex) && AVATARS[avatarIndex]) setAvatar(avatarIndex);
+        if (Number.isInteger(avatarIndex) && AVATARS[avatarIndex])
+          setAvatar(avatarIndex);
         setExistingProfile(true);
       })
       .catch(() => {
@@ -80,9 +88,14 @@ export default function ProfileScreen() {
       try {
         sessionStorage.setItem("pudding-avatar", String(avatar));
       } catch {}
-      router.push("/add-kid");
+      router.replace(returnTo);
+      router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to create your account.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to create your account.",
+      );
       setLoading(false);
     }
   }
@@ -91,7 +104,11 @@ export default function ProfileScreen() {
     "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
   const barColor =
     valid || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
-  const barInner = loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue";
+  const barInner = loading ? (
+    <SpinnerIcon className="size-6 text-white" />
+  ) : (
+    "Continue"
+  );
 
   return (
     <main className="min-h-dvh bg-white">
@@ -99,9 +116,17 @@ export default function ProfileScreen() {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="flex h-11 items-center justify-between">
-            <Link href="/security-2" aria-label="Back" className={circle}>
-              <ChevronLeftIcon className="size-6 text-black" />
-            </Link>
+            {returnTo === "/account" ? (
+              <BackButton fallback="/account" className={circle} />
+            ) : (
+              <Link
+                href="/login"
+                aria-label="Save and exit signup"
+                className={circle}
+              >
+                Exit
+              </Link>
+            )}
             <HelpLink
               aria-label="Help"
               className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${
@@ -160,7 +185,11 @@ export default function ProfileScreen() {
           </motion.div>
         </div>
 
-        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p role="alert" className="px-4 pb-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-6 px-4"

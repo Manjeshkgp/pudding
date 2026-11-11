@@ -1,5 +1,8 @@
-import PasswordScreen from "@/components/password-screen";
-
-export default function PasswordPage() {
-  return <PasswordScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/password", await searchParams);
 }

@@ -47,7 +47,7 @@ const reviewSpendingSchema = z.discriminatedUnion("decision", [
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await context.params;
@@ -68,7 +68,7 @@ export async function POST(
       throw new ApiError(
         404,
         "Spending request not found in your family",
-        "REQUEST_NOT_FOUND"
+        "REQUEST_NOT_FOUND",
       );
     }
 
@@ -80,7 +80,7 @@ export async function POST(
       throw new ApiError(
         409,
         `Spending request cannot be reviewed in status: ${spendingRequest.status}`,
-        "REQUEST_ALREADY_FINALIZED"
+        "REQUEST_ALREADY_FINALIZED",
       );
     }
 
@@ -105,7 +105,7 @@ export async function POST(
           throw new ApiError(
             409,
             `Spending request cannot be rejected in status: ${currentReq?.status ?? spendingRequest.status}`,
-            "REQUEST_ALREADY_FINALIZED"
+            "REQUEST_ALREADY_FINALIZED",
           );
         }
 
@@ -113,7 +113,7 @@ export async function POST(
           throw new ApiError(
             409,
             "Cannot reject a spending request while a PayPal checkout order is already in progress",
-            "PAYPAL_ORDER_IN_PROGRESS"
+            "PAYPAL_ORDER_IN_PROGRESS",
           );
         }
 
@@ -164,14 +164,14 @@ export async function POST(
           },
         },
         200,
-        "Spending request rejected"
+        "Spending request rejected",
       );
     }
 
     // 2. COUNTER_OFFER (FR-7.2)
     if (input.decision === "COUNTER_OFFER") {
       const counterDecimal = new Prisma.Decimal(
-        input.counterOfferAmount
+        input.counterOfferAmount,
       ).toDecimalPlaces(2);
 
       const countered = await prisma.$transaction(async (tx) => {
@@ -193,7 +193,7 @@ export async function POST(
           throw new ApiError(
             409,
             `Spending request cannot be counter-offered in status: ${currentReq?.status ?? spendingRequest.status}`,
-            "REQUEST_ALREADY_FINALIZED"
+            "REQUEST_ALREADY_FINALIZED",
           );
         }
 
@@ -201,7 +201,7 @@ export async function POST(
           throw new ApiError(
             409,
             "Cannot counter-offer a spending request while a PayPal checkout order is already in progress",
-            "PAYPAL_ORDER_IN_PROGRESS"
+            "PAYPAL_ORDER_IN_PROGRESS",
           );
         }
 
@@ -254,7 +254,7 @@ export async function POST(
           },
         },
         200,
-        `Counter-offer of $${counterDecimal.toFixed(2)} sent to ${spendingRequest.child.name}`
+        `Counter-offer of $${counterDecimal.toFixed(2)} sent to ${spendingRequest.child.name}`,
       );
     }
 
@@ -330,12 +330,11 @@ export async function POST(
           wallet: {
             spendBalance: debitResult.wallet.spendBalance.toString(),
             saveBalance: debitResult.wallet.saveBalance.toString(),
-            giveBalance: debitResult.wallet.giveBalance.toString(),
           },
           requiresPayPalCheckout: false,
         },
         200,
-        `Approved "${spendingRequest.productName || spendingRequest.purpose}" and deducted $${spendingRequest.amount.toFixed(2)} from ${spendingRequest.child.name}'s wallet`
+        `Approved "${spendingRequest.productName || spendingRequest.purpose}" and deducted $${spendingRequest.amount.toFixed(2)} from ${spendingRequest.child.name}'s wallet`,
       );
     }
 
@@ -376,7 +375,7 @@ export async function POST(
         recipientEmailWarning: RECIPIENT_EMAIL_WARNING_MESSAGE,
       },
       200,
-      "Request approved. Complete the PayPal checkout popup to send funds to the recipient."
+      "Request approved. Complete the PayPal checkout popup to send funds to the recipient.",
     );
   } catch (error) {
     return handleRouteError(error);

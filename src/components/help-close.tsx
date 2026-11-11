@@ -5,7 +5,11 @@ import { CloseIcon } from "@/components/icons";
 
 // Round white X at the top left of the help screens. Goes back to wherever
 // the person came from.
-export default function HelpClose({ fallback = "/account" }: { fallback?: string }) {
+export default function HelpClose({
+  fallback = "/account",
+}: {
+  fallback?: string;
+}) {
   const router = useRouter();
   return (
     <button
@@ -17,7 +21,11 @@ export default function HelpClose({ fallback = "/account" }: { fallback?: string
         try {
           origin = sessionStorage.getItem("pudding-help-origin") || fallback;
         } catch {}
-        router.push(origin);
+        router.replace(
+          origin.startsWith("/") && !origin.startsWith("//")
+            ? origin
+            : fallback,
+        );
       }}
       className="flex size-11 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
     >

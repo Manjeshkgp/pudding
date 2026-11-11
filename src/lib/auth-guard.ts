@@ -3,32 +3,15 @@ import { ApiError } from "./api-response";
 import { getSessionFromRequest, SessionPayload } from "./jwt";
 import prisma from "./prisma";
 
-export interface CoParentPermissions {
-  canManageBudget?: boolean;
-  canManageAllowances?: boolean;
-  canApproveChores?: boolean;
-  canApproveSpending?: boolean;
-  canManageChildren?: boolean;
-  canManageSpendingRules?: boolean;
-}
-
-export const DEFAULT_LIMITED_COPARENT_PERMISSIONS: Required<CoParentPermissions> = {
-  canManageBudget: false,
-  canManageAllowances: true,
-  canApproveChores: true,
-  canApproveSpending: true,
-  canManageChildren: false,
-  canManageSpendingRules: false,
-};
-
-export const FULL_COPARENT_PERMISSIONS: Required<CoParentPermissions> = {
-  canManageBudget: true,
-  canManageAllowances: true,
-  canApproveChores: true,
-  canApproveSpending: true,
-  canManageChildren: true,
-  canManageSpendingRules: true,
-};
+export {
+  DEFAULT_LIMITED_COPARENT_PERMISSIONS,
+  FULL_COPARENT_PERMISSIONS,
+} from "./co-parent-permissions";
+import {
+  CoParentPermissions,
+  DEFAULT_LIMITED_COPARENT_PERMISSIONS,
+} from "./co-parent-permissions";
+export type { CoParentPermissions } from "./co-parent-permissions";
 
 /**
  * Requires any valid authenticated session (Parent, Co-Parent, Child, or Admin).
@@ -53,14 +36,14 @@ export async function requireAuth(req: NextRequest): Promise<SessionPayload> {
       throw new ApiError(
         403,
         "Your account has been frozen. Please contact support.",
-        "ACCOUNT_FROZEN"
+        "ACCOUNT_FROZEN",
       );
     }
     if (user.family?.isFrozen && user.role !== "ADMIN") {
       throw new ApiError(
         403,
         "Your family account is currently frozen.",
-        "FAMILY_FROZEN"
+        "FAMILY_FROZEN",
       );
     }
   } else if (session.subjectType === "CHILD") {
@@ -76,14 +59,14 @@ export async function requireAuth(req: NextRequest): Promise<SessionPayload> {
       throw new ApiError(
         403,
         "Your account is paused by your parent.",
-        "CHILD_FROZEN"
+        "CHILD_FROZEN",
       );
     }
     if (child.family.isFrozen) {
       throw new ApiError(
         403,
         "Family account is currently paused.",
-        "FAMILY_FROZEN"
+        "FAMILY_FROZEN",
       );
     }
   }
@@ -96,7 +79,7 @@ export async function requireAuth(req: NextRequest): Promise<SessionPayload> {
  */
 export async function requireParent(
   req: NextRequest,
-  requiredPermission?: keyof CoParentPermissions
+  requiredPermission?: keyof CoParentPermissions,
 ) {
   const session = await getSessionFromRequest(req);
   if (!session) {
@@ -110,7 +93,7 @@ export async function requireParent(
     throw new ApiError(
       403,
       "Parent access required for this action",
-      "FORBIDDEN_PARENT_ONLY"
+      "FORBIDDEN_PARENT_ONLY",
     );
   }
 
@@ -127,7 +110,7 @@ export async function requireParent(
     throw new ApiError(
       403,
       "Account or family wallet is currently frozen",
-      "ACCOUNT_FROZEN"
+      "ACCOUNT_FROZEN",
     );
   }
 
@@ -147,7 +130,7 @@ export async function requireParent(
       throw new ApiError(
         403,
         `Co-parent does not have permission: ${requiredPermission}`,
-        "INSUFFICIENT_COPARENT_PERMISSIONS"
+        "INSUFFICIENT_COPARENT_PERMISSIONS",
       );
     }
   }
@@ -164,7 +147,7 @@ export async function requirePrimaryParent(req: NextRequest) {
     throw new ApiError(
       403,
       "Only the primary parent can perform this action",
-      "PRIMARY_PARENT_REQUIRED"
+      "PRIMARY_PARENT_REQUIRED",
     );
   }
   return { session, user, family };
@@ -176,7 +159,7 @@ export async function requirePrimaryParent(req: NextRequest) {
  */
 export async function requireChildOrFamilyParent(
   req: NextRequest,
-  targetChildId: string
+  targetChildId: string,
 ) {
   const session = await requireAuth(req);
 
@@ -185,7 +168,7 @@ export async function requireChildOrFamilyParent(
       throw new ApiError(
         403,
         "Children can only access their own wallet and profile",
-        "FORBIDDEN_CROSS_CHILD_ACCESS"
+        "FORBIDDEN_CROSS_CHILD_ACCESS",
       );
     }
     const child = await prisma.child.findUnique({
@@ -210,7 +193,7 @@ export async function requireChildOrFamilyParent(
       throw new ApiError(
         403,
         "You do not have access to this child profile",
-        "FORBIDDEN_FAMILY_MISMATCH"
+        "FORBIDDEN_FAMILY_MISMATCH",
       );
     }
     return { session, child, isParent: true };

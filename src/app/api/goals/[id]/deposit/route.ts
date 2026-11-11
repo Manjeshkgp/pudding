@@ -1,3 +1,4 @@
+import { notifyWithPush } from "@/services/notification.service";
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -15,12 +16,18 @@ import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 const depositGoalSchema = z.discriminatedUnion("source", [
   z.object({
     source: z.enum(["SAVE_BUCKET", "SPEND_BUCKET"]),
-    amount: z.number().positive("Deposit amount must be greater than 0").max(10000),
+    amount: z
+      .number()
+      .positive("Deposit amount must be greater than 0")
+      .max(10000),
     idempotencyKey: z.string().trim().min(4).max(128).optional(),
   }),
   z.object({
     source: z.literal("PARENT_CONTRIBUTION"),
-    amount: z.number().positive("Contribution amount must be greater than 0").max(10000),
+    amount: z
+      .number()
+      .positive("Contribution amount must be greater than 0")
+      .max(10000),
     idempotencyKey: z.string().trim().min(4).max(128).optional(),
   }),
 ]);
@@ -34,7 +41,7 @@ const depositGoalSchema = z.discriminatedUnion("source", [
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: goalId } = await context.params;
@@ -54,7 +61,7 @@ export async function POST(
       throw new ApiError(
         409,
         "Cannot deposit into a withdrawn savings goal",
-        "GOAL_WITHDRAWN"
+        "GOAL_WITHDRAWN",
       );
     }
 
@@ -74,6 +81,26 @@ export async function POST(
         `goal-parent-contrib:${goal.id}:${user.id}:${Date.now()}`;
 
       const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${family.id} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "SavingsGoal" WHERE "id" = ${goalId} FOR UPDATE`;
+        const goal = await tx.savingsGoal.findUniqueOrThrow({
+          where: { id: goalId },
+        });
+        const replay = await tx.ledgerEntry.findUnique({
+          where: { idempotencyKey },
+        });
+        if (replay) {
+          if (
+            replay.familyId !== family.id ||
+            replay.referenceId !== goal.id ||
+            !replay.amount.equals(amount)
+          )
+            throw new ApiError(
+              409,
+              "Request key already used for a different contribution.",
+            );
+          return { updatedGoal: goal, reachedGoal: false };
+        }
         const familyRows = await tx.$queryRaw<
           Array<{ id: string; unallocatedBudget: Prisma.Decimal }>
         >`SELECT "id", "unallocatedBudget" FROM "Family" WHERE "id" = ${family.id} FOR UPDATE`;
@@ -86,7 +113,7 @@ export async function POST(
           throw new ApiError(
             400,
             "Insufficient unallocated family budget for parent contribution",
-            "INSUFFICIENT_FAMILY_BUDGET"
+            "INSUFFICIENT_FAMILY_BUDGET",
           );
         }
 
@@ -139,21 +166,24 @@ export async function POST(
             ipAddress,
             userAgent,
           },
-          tx
+          tx,
         );
 
         return { updatedGoal, reachedGoal };
       });
 
       if (result.reachedGoal) {
-        await prisma.notification.create({
+        await notifyWithPushRecord({
           data: {
             familyId: family.id,
             childId: goal.childId,
             type: "SAVINGS_GOAL_REACHED",
             title: `Goal Reached: ${goal.name}!`,
             message: `Congratulations! You reached your $${goal.targetAmount.toFixed(2)} goal for "${goal.name}"!`,
-            metadata: { goalId: goal.id, celebrationAnimation: "CONFETTI_BURST" },
+            metadata: {
+              goalId: goal.id,
+              celebrationAnimation: "CONFETTI_BURST",
+            },
             channel: "IN_APP",
           },
         });
@@ -177,21 +207,20 @@ export async function POST(
         200,
         result.reachedGoal
           ? `Goal "${goal.name}" completed!`
-          : `Added $${amount.toFixed(2)} parent contribution to "${goal.name}"`
+          : `Added $${amount.toFixed(2)} parent contribution to "${goal.name}"`,
       );
     }
 
     // Mode 2: Child (or Parent on behalf of Child) deposits from SAVE_BUCKET or SPEND_BUCKET
     const { session, child, isParent } = await requireChildOrFamilyParent(
       req,
-      goal.childId
+      goal.childId,
     );
 
     const depositAmount = new Prisma.Decimal(input.amount).toDecimalPlaces(2);
     const bucketField =
       input.source === "SAVE_BUCKET" ? "saveBalance" : "spendBalance";
-    const walletBucketEnum =
-      input.source === "SAVE_BUCKET" ? "SAVE" : "SPEND";
+    const walletBucketEnum = input.source === "SAVE_BUCKET" ? "SAVE" : "SPEND";
 
     const idempotencyKey =
       input.idempotencyKey ||
@@ -199,15 +228,43 @@ export async function POST(
       `goal-deposit:${goal.id}:${session.sub}:${Date.now()}`;
 
     const txResult = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${child.familyId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "SavingsGoal" WHERE "id" = ${goalId} FOR UPDATE`;
+      const goal = await tx.savingsGoal.findUniqueOrThrow({
+        where: { id: goalId },
+      });
+      const replay = await tx.ledgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        if (
+          replay.childId !== child.id ||
+          replay.referenceId !== goalId ||
+          !replay.amount.equals(depositAmount)
+        )
+          throw new ApiError(
+            409,
+            "Request key already used for another deposit.",
+          );
+        return {
+          updatedGoal: goal,
+          updatedWallet: await tx.wallet.findUniqueOrThrow({
+            where: { childId: child.id },
+          }),
+          matchApplied: new Prisma.Decimal(0),
+          reachedGoal: false,
+        };
+      }
       // 1. Lock Child Wallet
       const walletRows = await tx.$queryRaw<
         Array<{
           id: string;
           spendBalance: Prisma.Decimal;
+          purchaseReservedBalance: Prisma.Decimal;
           saveBalance: Prisma.Decimal;
           isFrozen: boolean;
         }>
-      >`SELECT "id", "spendBalance", "saveBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${child.id} FOR UPDATE`;
+      >`SELECT "id", "spendBalance", "purchaseReservedBalance", "saveBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${child.id} FOR UPDATE`;
 
       const lockedWallet = walletRows[0];
       if (!lockedWallet) {
@@ -218,13 +275,17 @@ export async function POST(
       }
 
       const availableBucketBalance = new Prisma.Decimal(
-        lockedWallet[bucketField]
+        lockedWallet[bucketField],
+      ).minus(
+        input.source === "SPEND_BUCKET"
+          ? lockedWallet.purchaseReservedBalance
+          : 0,
       );
       if (availableBucketBalance.lt(depositAmount)) {
         throw new ApiError(
           400,
           `Insufficient ${walletBucketEnum} balance ($${availableBucketBalance.toFixed(2)} available, $${depositAmount.toFixed(2)} required)`,
-          "INSUFFICIENT_BUCKET_BALANCE"
+          "INSUFFICIENT_BUCKET_BALANCE",
         );
       }
 
@@ -264,7 +325,7 @@ export async function POST(
         if (goal.matchMaxAmount) {
           const remainingMatchCap = Prisma.Decimal.max(
             new Prisma.Decimal(0),
-            goal.matchMaxAmount.minus(goal.matchedTotalSoFar)
+            goal.matchMaxAmount.minus(goal.matchedTotalSoFar),
           );
           if (rawMatch.gt(remainingMatchCap)) {
             rawMatch = remainingMatchCap;
@@ -344,7 +405,7 @@ export async function POST(
           ipAddress,
           userAgent,
         },
-        tx
+        tx,
       );
 
       return { updatedWallet, updatedGoal, matchApplied, reachedGoal };
@@ -396,7 +457,6 @@ export async function POST(
         wallet: {
           spendBalance: txResult.updatedWallet.spendBalance.toString(),
           saveBalance: txResult.updatedWallet.saveBalance.toString(),
-          giveBalance: txResult.updatedWallet.giveBalance.toString(),
         },
         projection,
       },
@@ -405,9 +465,17 @@ export async function POST(
         ? `Congratulations! You reached your "${goal.name}" goal!`
         : txResult.matchApplied.gt(0)
           ? `Deposited $${depositAmount.toFixed(2)} + $${txResult.matchApplied.toFixed(2)} parent match!`
-          : `Deposited $${depositAmount.toFixed(2)} into "${goal.name}"`
+          : `Deposited $${depositAmount.toFixed(2)} into "${goal.name}"`,
     );
   } catch (error) {
     return handleRouteError(error);
   }
+}
+
+async function notifyWithPushRecord(
+  input: Parameters<typeof prisma.notification.create>[0],
+) {
+  return notifyWithPush(
+    input.data as import("@prisma/client").Prisma.NotificationUncheckedCreateInput,
+  );
 }

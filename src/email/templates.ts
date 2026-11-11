@@ -1,5 +1,5 @@
 /**
- * GoodSpend Email HTML Templates
+ * Pudding Email HTML Templates
  * Built on the Stripo XHTML table layout from src/email/otp.ts so all emails
  * share a consistent structure and can be easily customized later.
  */
@@ -14,7 +14,9 @@ export interface BaseEmailLayoutOptions {
   footerDisclaimer?: string;
 }
 
-export function renderBaseEmailTemplate(options: BaseEmailLayoutOptions): string {
+export function renderBaseEmailTemplate(
+  options: BaseEmailLayoutOptions,
+): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const ctaHtml =
     options.ctaLabel && options.ctaUrl
@@ -56,7 +58,7 @@ export function renderBaseEmailTemplate(options: BaseEmailLayoutOptions): string
                           <tr>
                             <td align="left" style="padding:25px 35px 20px 35px;">
                               <a target="_blank" href="${appUrl}" style="text-decoration:none; color:#113f37; font-size:22px; font-weight:700;">
-                                GoodSpend
+                                Pudding
                               </a>
                             </td>
                           </tr>
@@ -126,7 +128,7 @@ export function renderBaseEmailTemplate(options: BaseEmailLayoutOptions): string
                               <p style="margin:0; font-size:12px; color:#777777; line-height:1.5;">
                                 ${
                                   options.footerDisclaimer ||
-                                  "You received this email from GoodSpend Parenting & Kids Fintech."
+                                  "You received this email from Pudding Parenting & Kids Fintech."
                                 }
                               </p>
                             </td>
@@ -165,7 +167,7 @@ export function renderOtpEmailHtml(params: {
     `,
     expiryNote: `This code is valid for one use only and expires in ${params.expiresInMinutes} minutes.`,
     footerDisclaimer:
-      "If you did not request this verification code, please ignore this email or contact GoodSpend support.",
+      "If you did not request this verification code, please ignore this email or contact Pudding support.",
   });
 }
 
@@ -178,15 +180,17 @@ export function renderNotificationEmailHtml(params: {
 }): string {
   return renderBaseEmailTemplate({
     heading: params.title,
-    subtitle: `Hi ${params.recipientName || "Parent"}, here is an update from your family account on GoodSpend.`,
+    subtitle: `Hi ${params.recipientName || "Parent"}, here is an update from your family account on Pudding.`,
     cardHtml: `
       <div style="font-size:15px; color:#222222; line-height:1.6;">
         ${params.body}
       </div>
     `,
-    ctaLabel: params.ctaLabel || "Open GoodSpend Dashboard",
+    ctaLabel: params.ctaLabel || "Open Pudding Dashboard",
     ctaUrl:
-      params.ctaUrl || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      params.ctaUrl ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000",
   });
 }
 
@@ -199,7 +203,6 @@ export function renderWeeklyDigestEmailHtml(params: {
     totalEarned: string;
     totalSpent: string;
     totalSaved: string;
-    totalDonated: string;
     choresCompleted: number;
     lessonsCompleted: number;
   }>;
@@ -215,8 +218,7 @@ export function renderWeeklyDigestEmailHtml(params: {
             <td><strong>Spent:</strong> $${child.totalSpent}</td>
           </tr>
           <tr>
-            <td><strong>Saved:</strong> $${child.totalSaved}</td>
-            <td><strong>Donated:</strong> $${child.totalDonated}</td>
+            <td colspan="2"><strong>Saved:</strong> $${child.totalSaved}</td>
           </tr>
           <tr>
             <td><strong>Chores Done:</strong> ${child.choresCompleted}</td>
@@ -224,7 +226,7 @@ export function renderWeeklyDigestEmailHtml(params: {
           </tr>
         </table>
       </div>
-    `
+    `,
     )
     .join("");
 

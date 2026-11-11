@@ -13,12 +13,12 @@ import {
   SpinnerIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
-import { postApi } from "@/lib/client-api";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 6: security question.
 // States from Figma: idle, question list open, answer focused (header
 // shrinks), answer typed (Continue turns black) and loading after Continue.
-// Sample data only: nothing is saved.
+// Only hashed answers are saved. Returning to a step can preserve its existing answer.
 const QUESTIONS = [
   "The school you attended first",
   "The city or town you were born in",
@@ -53,6 +53,25 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
   const [graphic, setGraphic] = useState(false);
   const { open, offset } = useKeyboard(answerRef);
 
+  const [savedQuestion, setSavedQuestion] = useState("");
+  useEffect(() => {
+    getApi<{ signedIn: boolean; questions: { questionText: string }[] }>(
+      "/api/auth/parent/signup/status",
+    )
+      .then((r) => {
+        if (r.signedIn) {
+          router.replace("/account/security");
+          return;
+        }
+        const q = r.questions[step - 1];
+        if (q) {
+          setPicked(q.questionText);
+          setSavedQuestion(q.questionText);
+        }
+        if (step === 2) setUsed(r.questions[0]?.questionText || null);
+      })
+      .catch(() => undefined);
+  }, [router, step]);
   const options = QUESTIONS.filter((q) => q !== used);
   const question = picked && options.includes(picked) ? picked : options[0];
 
@@ -63,7 +82,9 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
     } catch {}
   }, [step]);
 
-  const valid = answer.trim().length > 0;
+  const valid =
+    answer.trim().length >= 2 ||
+    Boolean(savedQuestion && question === savedQuestion);
   const onKeyboard = focused && open;
 
   async function submit() {
@@ -80,18 +101,21 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
       await postApi("/api/auth/parent/signup/security-questions", {
         questionKey,
         questionText: question,
-        answer: answer.trim(),
+        answer: answer.trim() || undefined,
+        slot: step - 1,
       });
       if (step === 1) {
         try {
           sessionStorage.setItem("pudding-question-1", question);
         } catch {}
-        router.push("/security-2");
+        router.push("/onboarding/security-2");
       } else {
-        router.push("/profile");
+        router.push("/onboarding/profile");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to save answer.");
+      setError(
+        cause instanceof Error ? cause.message : "Unable to save answer.",
+      );
       setLoading(false);
     }
   }
@@ -100,7 +124,11 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
     "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
   const barColor =
     valid || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
-  const barInner = loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue";
+  const barInner = loading ? (
+    <SpinnerIcon className="size-6 text-white" />
+  ) : (
+    "Continue"
+  );
 
   return (
     <main className="min-h-dvh bg-white">
@@ -108,8 +136,12 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="flex h-11 items-center justify-between">
-            <Link href={step === 1 ? "/password" : "/security"} aria-label="Back" className={circle}>
-              <ChevronLeftIcon className="size-6 text-black" />
+            <Link
+              href="/login"
+              aria-label="Save and exit signup"
+              className={circle}
+            >
+              Exit
             </Link>
             <HelpLink
               aria-label="Help"
@@ -190,7 +222,11 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
           </motion.div>
         </div>
 
-        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p role="alert" className="px-4 pb-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-6 px-4"
@@ -235,7 +271,10 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
                 />
                 <div
                   role="listbox"
-                  style={{ scrollbarWidth: "thin", scrollbarColor: "#a6a6a6 transparent" }}
+                  style={{
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "#a6a6a6 transparent",
+                  }}
                   className="absolute inset-x-0 top-full z-30 mt-0.5 max-h-[152px] overflow-y-auto rounded-xl bg-white shadow-[0px_4px_16px_0px_rgba(0,0,0,0.12)]"
                 >
                   {options.map((q) => (
@@ -283,7 +322,11 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
                   setMenuOpen(false);
                 }}
                 onBlur={() => setFocused(false)}
-                placeholder="Enter your answer"
+                placeholder={
+                  savedQuestion === question
+                    ? "Answer saved — leave blank to keep it"
+                    : "Enter your answer"
+                }
                 className="h-full min-w-0 flex-1 bg-transparent px-2 text-[17px] leading-[25px] tracking-[-0.17px] text-black outline-none placeholder:text-[#5e5e5e]"
               />
               {focused && answer && (

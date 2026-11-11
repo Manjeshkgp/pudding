@@ -68,11 +68,11 @@ async function releasePreflightReservationOnConfirmedFailure(params: {
 
     const debitState = await getSpendingRequestNetDebitState(
       tx,
-      params.spendingRequestId
+      params.spendingRequestId,
     );
     const amountToRestore = Prisma.Decimal.min(
       params.amount,
-      debitState.netDebited
+      debitState.netDebited,
     ).toDecimalPlaces(2);
 
     if (amountToRestore.gt(0)) {
@@ -83,11 +83,11 @@ async function releasePreflightReservationOnConfirmedFailure(params: {
 
       if (lockedWallet) {
         const currentLocked = new Prisma.Decimal(
-          lockedWallet.lockedPendingBalance
+          lockedWallet.lockedPendingBalance,
         );
         const lockedToClear = Prisma.Decimal.min(
           currentLocked,
-          amountToRestore
+          amountToRestore,
         );
 
         await tx.wallet.update({
@@ -179,7 +179,7 @@ async function releasePreflightReservationOnConfirmedFailure(params: {
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: requestId } = await context.params;
@@ -209,7 +209,7 @@ export async function POST(
         throw new ApiError(
           404,
           "Spending request not found in your family",
-          "REQUEST_NOT_FOUND"
+          "REQUEST_NOT_FOUND",
         );
       }
 
@@ -217,7 +217,7 @@ export async function POST(
         throw new ApiError(
           400,
           "Only Option A (PayPal Email) requests can be captured via PayPal",
-          "INVALID_OPTION_TYPE"
+          "INVALID_OPTION_TYPE",
         );
       }
 
@@ -249,18 +249,17 @@ export async function POST(
         throw new ApiError(
           409,
           `Spending request cannot be captured in status ${lockedReq.status}`,
-          "SPENDING_REQUEST_TERMINAL"
+          "SPENDING_REQUEST_TERMINAL",
         );
       }
 
-      const resolvedOrderId =
-        input.paypalOrderId || lockedReq.paypalOrderId;
+      const resolvedOrderId = input.paypalOrderId || lockedReq.paypalOrderId;
 
       if (!resolvedOrderId) {
         throw new ApiError(
           400,
           "No PayPal order ID found for this spending request. Call create-order first.",
-          "MISSING_PAYPAL_ORDER_ID"
+          "MISSING_PAYPAL_ORDER_ID",
         );
       }
 
@@ -272,7 +271,7 @@ export async function POST(
         throw new ApiError(
           409,
           "Provided paypalOrderId does not match the spending request's active PayPal order",
-          "PAYPAL_ORDER_ID_MISMATCH"
+          "PAYPAL_ORDER_ID_MISMATCH",
         );
       }
 
@@ -281,11 +280,11 @@ export async function POST(
       // reserve the remaining amount using the cycle-scoped idempotency key!
       const debitState = await getSpendingRequestNetDebitState(
         tx,
-        lockedReq.id
+        lockedReq.id,
       );
       const amountNeededToReserve = Prisma.Decimal.max(
         new Prisma.Decimal(0),
-        lockedReq.amount.minus(debitState.netDebited)
+        lockedReq.amount.minus(debitState.netDebited),
       ).toDecimalPlaces(2);
 
       if (amountNeededToReserve.gt(0)) {
@@ -338,7 +337,7 @@ export async function POST(
             ? {
                 spendBalance: preflight.wallet.spendBalance.toString(),
                 saveBalance: preflight.wallet.saveBalance.toString(),
-                giveBalance: preflight.wallet.giveBalance.toString(),
+
                 lockedPendingBalance:
                   preflight.wallet.lockedPendingBalance.toString(),
               }
@@ -346,7 +345,7 @@ export async function POST(
           idempotentReplay: true,
         },
         200,
-        "PayPal order already captured"
+        "PayPal order already captured",
       );
     }
 
@@ -364,7 +363,7 @@ export async function POST(
     try {
       captureResponse = await capturePayPalOrder(
         orderIdToCapture,
-        idempotencyKey
+        idempotencyKey,
       );
     } catch (captureErr) {
       let reconciledOrder: PayPalOrderResponse | null = null;
@@ -377,14 +376,14 @@ export async function POST(
         throw new ApiError(
           503,
           "PayPal capture outcome could not be verified due to a temporary network error. Funds remain safely reserved while awaiting PayPal confirmation.",
-          "PAYPAL_CAPTURE_OUTCOME_AMBIGUOUS"
+          "PAYPAL_CAPTURE_OUTCOME_AMBIGUOUS",
         );
       }
 
       const reconciledCaptures =
         reconciledOrder.purchase_units?.[0]?.payments?.captures || [];
       const activeCapture = reconciledCaptures.find(
-        (c) => c.status === "COMPLETED" || c.status === "PENDING"
+        (c) => c.status === "COMPLETED" || c.status === "PENDING",
       );
 
       if (activeCapture) {
@@ -437,7 +436,7 @@ export async function POST(
       throw new ApiError(
         402,
         "PayPal payment was declined by the funding source",
-        "PAYPAL_CAPTURE_DECLINED"
+        "PAYPAL_CAPTURE_DECLINED",
       );
     }
 
@@ -445,7 +444,7 @@ export async function POST(
       throw new ApiError(
         502,
         "PayPal capture response is missing the capture ID",
-        "MISSING_PAYPAL_CAPTURE_ID"
+        "MISSING_PAYPAL_CAPTURE_ID",
       );
     }
 
@@ -478,11 +477,11 @@ export async function POST(
       // Defense-in-depth: ensure the request has a full net debit before finalizing
       const debitState = await getSpendingRequestNetDebitState(
         tx,
-        spendingRequest.id
+        spendingRequest.id,
       );
       const missingDebit = Prisma.Decimal.max(
         new Prisma.Decimal(0),
-        spendingRequest.amount.minus(debitState.netDebited)
+        spendingRequest.amount.minus(debitState.netDebited),
       ).toDecimalPlaces(2);
 
       if (missingDebit.gt(0)) {
@@ -525,23 +524,22 @@ export async function POST(
         missingDebit.eq(0)
       ) {
         const currentLocked = new Prisma.Decimal(
-          lockedWallet.lockedPendingBalance
+          lockedWallet.lockedPendingBalance,
         );
         const decrementAmt = Prisma.Decimal.min(
           currentLocked,
-          spendingRequest.amount
+          spendingRequest.amount,
         );
-        updatedWallet =
-          decrementAmt.gt(0)
-            ? await tx.wallet.update({
-                where: { id: lockedWallet.id },
-                data: {
-                  lockedPendingBalance: { decrement: decrementAmt },
-                },
-              })
-            : await tx.wallet.findUniqueOrThrow({
-                where: { id: lockedWallet.id },
-              });
+        updatedWallet = decrementAmt.gt(0)
+          ? await tx.wallet.update({
+              where: { id: lockedWallet.id },
+              data: {
+                lockedPendingBalance: { decrement: decrementAmt },
+              },
+            })
+          : await tx.wallet.findUniqueOrThrow({
+              where: { id: lockedWallet.id },
+            });
       } else {
         updatedWallet = await tx.wallet.findUniqueOrThrow({
           where: { childId: spendingRequest.childId },
@@ -628,15 +626,14 @@ export async function POST(
         wallet: {
           spendBalance: finalWallet.spendBalance.toString(),
           saveBalance: finalWallet.saveBalance.toString(),
-          giveBalance: finalWallet.giveBalance.toString(),
-          lockedPendingBalance:
-            finalWallet.lockedPendingBalance.toString(),
+
+          lockedPendingBalance: finalWallet.lockedPendingBalance.toString(),
         },
       },
       200,
       isPendingClaim
         ? `Payment sent to ${spendingRequest.recipientPaypalEmail} (Pending recipient claim on PayPal)`
-        : `Payment of $${spendingRequest.amount.toFixed(2)} to ${spendingRequest.recipientPaypalEmail} completed!`
+        : `Payment of $${spendingRequest.amount.toFixed(2)} to ${spendingRequest.recipientPaypalEmail} completed!`,
     );
   } catch (error) {
     return handleRouteError(error);

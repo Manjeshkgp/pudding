@@ -1,3 +1,4 @@
+import { reconcilePurchase } from "@/services/purchase.service";
 import { NextRequest } from "next/server";
 import { Prisma, SpendingRequestStatus } from "@prisma/client";
 import prisma from "@/lib/prisma";
@@ -58,7 +59,7 @@ const TERMINAL_SPEND_STATUSES: SpendingRequestStatus[] = [
  * HATEOAS `up` link (`/v2/payments/captures/{capture_id}`) per PayPal v2 Refunds API spec.
  */
 function extractCaptureIdFromRefundResource(
-  resource: PayPalWebhookResource
+  resource: PayPalWebhookResource,
 ): string | undefined {
   const fromRelatedIds = resource.supplementary_data?.related_ids?.capture_id;
   if (fromRelatedIds) {
@@ -66,7 +67,7 @@ function extractCaptureIdFromRefundResource(
   }
 
   const upLink = resource.links?.find(
-    (l) => l.rel === "up" && l.href?.includes("/v2/payments/captures/")
+    (l) => l.rel === "up" && l.href?.includes("/v2/payments/captures/"),
   )?.href;
 
   if (upLink) {
@@ -97,14 +98,12 @@ async function confirmLivePayPalCaptureAllowsDebit(params: {
   // Query the order details and find the exact capture by ID (never guessing captures[0])
   const orderDetails = await getPayPalOrderDetails(params.paypalOrderId);
   const captures = orderDetails.purchase_units?.[0]?.payments?.captures || [];
-  let matchingCapture = captures.find(
-    (c) => c.id === params.expectedCaptureId
-  );
+  let matchingCapture = captures.find((c) => c.id === params.expectedCaptureId);
 
   // If the order payload didn't inline the capture, query GET /v2/payments/captures/{id} directly
   if (!matchingCapture) {
     const directCapture = await getPayPalCaptureDetails(
-      params.expectedCaptureId
+      params.expectedCaptureId,
     );
     const directOrderId =
       directCapture.supplementary_data?.related_ids?.order_id;
@@ -206,7 +205,7 @@ async function confirmLivePayPalRefund(params: {
     throw new ApiError(
       409,
       `Live PayPal refund ${params.refundId} is still PENDING settlement; deferring wallet credit until COMPLETED`,
-      "PAYPAL_REFUND_STILL_PENDING"
+      "PAYPAL_REFUND_STILL_PENDING",
     );
   }
 
@@ -241,7 +240,7 @@ async function confirmLivePayPalRefund(params: {
   }
 
   const authoritativeAmount = new Prisma.Decimal(
-    grossOrAmount.value
+    grossOrAmount.value,
   ).toDecimalPlaces(2);
 
   if (!authoritativeAmount.equals(params.webhookAmount)) {
@@ -275,7 +274,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "Invalid PayPal webhook payload",
-        "INVALID_WEBHOOK"
+        "INVALID_WEBHOOK",
       );
     }
 
@@ -290,7 +289,7 @@ export async function POST(req: NextRequest) {
         transmissionSig: req.headers.get("paypal-transmission-sig"),
         transmissionTime: req.headers.get("paypal-transmission-time"),
       },
-      rawBody as unknown as Record<string, unknown>
+      rawBody as unknown as Record<string, unknown>,
     );
 
     if (!isSignatureValid) {
@@ -306,7 +305,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         401,
         "PayPal webhook signature verification failed",
-        "INVALID_WEBHOOK_SIGNATURE"
+        "INVALID_WEBHOOK_SIGNATURE",
       );
     }
 
@@ -322,7 +321,7 @@ export async function POST(req: NextRequest) {
       return apiSuccess(
         { eventId: rawBody.id, deduplicated: true },
         200,
-        "Webhook event already processed"
+        "Webhook event already processed",
       );
     }
 
@@ -365,7 +364,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "PayPal webhook resource is missing required id, amount.value, or amount.currency_code",
-        "MALFORMED_WEBHOOK_RESOURCE"
+        "MALFORMED_WEBHOOK_RESOURCE",
       );
     }
 
@@ -376,7 +375,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         `Invalid decimal amount in PayPal webhook: ${rawAmountValue}`,
-        "INVALID_WEBHOOK_AMOUNT"
+        "INVALID_WEBHOOK_AMOUNT",
       );
     }
 
@@ -384,7 +383,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "PayPal webhook amount must be greater than zero",
-        "INVALID_WEBHOOK_AMOUNT"
+        "INVALID_WEBHOOK_AMOUNT",
       );
     }
 
@@ -399,13 +398,61 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "Refund webhook is missing parent capture_id in supplementary_data.related_ids and HATEOAS links",
-        "MISSING_PARENT_CAPTURE_ID"
+        "MISSING_PARENT_CAPTURE_ID",
       );
     }
 
     const relatedOrderId =
       resource.supplementary_data?.related_ids?.order_id?.trim();
     const customId = resource.custom_id?.trim();
+
+    const demoPurchase = await prisma.purchase.findFirst({
+      where: {
+        OR: [
+          { paypalCaptureId: captureId },
+          ...(relatedOrderId ? [{ paypalOrderId: relatedOrderId }] : []),
+          ...(customId ? [{ id: customId }] : []),
+        ],
+      },
+    });
+    if (demoPurchase) {
+      if (
+        !demoPurchase.amount.equals(parsedEventAmount) ||
+        demoPurchase.currency !== resource.amount?.currency_code
+      )
+        throw new ApiError(
+          409,
+          "Webhook amount or currency does not match invoice.",
+        );
+      if (relatedOrderId && demoPurchase.paypalOrderId !== relatedOrderId)
+        throw new ApiError(409, "Webhook order does not match invoice.");
+      if (eventType === "PAYMENT.CAPTURE.COMPLETED") {
+        const confirmed = await reconcilePurchase(demoPurchase.id);
+        if (confirmed.paypalCaptureId !== captureId)
+          throw new ApiError(409, "Webhook capture does not match invoice.");
+      }
+      // Refund/reversal operations are outside the sandbox purchase demo.
+      // A completed purchase is never debited again by a later webhook.
+      await prisma.webhookEvent.upsert({
+        where: { eventId: rawBody.id },
+        create: {
+          eventId: rawBody.id,
+          eventType,
+          payload: rawBody as unknown as Prisma.InputJsonValue,
+          status:
+            eventType === "PAYMENT.CAPTURE.COMPLETED" ? "PROCESSED" : "IGNORED",
+        },
+        update: {
+          status:
+            eventType === "PAYMENT.CAPTURE.COMPLETED" ? "PROCESSED" : "IGNORED",
+        },
+      });
+      return apiSuccess({
+        eventId: rawBody.id,
+        purchaseId: demoPurchase.id,
+        processed: true,
+      });
+    }
 
     // 4. Locate the matching SpendingRequest (or Charity Donation)
     const spendingRequest = await prisma.spendingRequest.findFirst({
@@ -425,7 +472,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!spendingRequest) {
-      // Check if it matches a Charity Donation
+      // Reconcile historical donations only. New donations have been retired.
       const donation = await prisma.donation.findFirst({
         where: {
           OR: [
@@ -443,7 +490,7 @@ export async function POST(req: NextRequest) {
         throw new ApiError(
           409,
           `No matching SpendingRequest or Donation found yet for capture ${captureId}`,
-          "WEBHOOK_TARGET_NOT_READY"
+          "WEBHOOK_TARGET_NOT_READY",
         );
       }
 
@@ -495,7 +542,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         409,
         `SpendingRequest ${spendingRequest.id} does not have a committed paypalOrderId yet`,
-        "WEBHOOK_ORDER_CORRELATION_PENDING"
+        "WEBHOOK_ORDER_CORRELATION_PENDING",
       );
     }
 
@@ -504,18 +551,15 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         409,
         `Webhook for SpendingRequest ${spendingRequest.id} is missing order_id before capture_id is recorded`,
-        "WEBHOOK_CORRELATION_INCOMPLETE"
+        "WEBHOOK_CORRELATION_INCOMPLETE",
       );
     }
 
     const mismatchReasons: string[] = [];
 
-    if (
-      relatedOrderId &&
-      spendingRequest.paypalOrderId !== relatedOrderId
-    ) {
+    if (relatedOrderId && spendingRequest.paypalOrderId !== relatedOrderId) {
       mismatchReasons.push(
-        `Order ID mismatch (expected ${spendingRequest.paypalOrderId}, got ${relatedOrderId})`
+        `Order ID mismatch (expected ${spendingRequest.paypalOrderId}, got ${relatedOrderId})`,
       );
     }
 
@@ -524,26 +568,26 @@ export async function POST(req: NextRequest) {
       spendingRequest.paypalCaptureId !== captureId
     ) {
       mismatchReasons.push(
-        `Capture ID mismatch (expected ${spendingRequest.paypalCaptureId}, got ${captureId})`
+        `Capture ID mismatch (expected ${spendingRequest.paypalCaptureId}, got ${captureId})`,
       );
     }
 
     const expectedCurrency = spendingRequest.family.currency.toUpperCase();
     if (rawCurrency !== expectedCurrency) {
       mismatchReasons.push(
-        `Currency mismatch (expected ${expectedCurrency}, got ${rawCurrency})`
+        `Currency mismatch (expected ${expectedCurrency}, got ${rawCurrency})`,
       );
     }
 
     if (isRefundEvent) {
       if (parsedEventAmount.gt(spendingRequest.amount)) {
         mismatchReasons.push(
-          `Refund amount ${parsedEventAmount.toFixed(2)} exceeds request amount ${spendingRequest.amount.toFixed(2)}`
+          `Refund amount ${parsedEventAmount.toFixed(2)} exceeds request amount ${spendingRequest.amount.toFixed(2)}`,
         );
       }
     } else if (!parsedEventAmount.equals(spendingRequest.amount)) {
       mismatchReasons.push(
-        `Capture amount mismatch (expected ${spendingRequest.amount.toFixed(2)}, got ${parsedEventAmount.toFixed(2)})`
+        `Capture amount mismatch (expected ${spendingRequest.amount.toFixed(2)}, got ${parsedEventAmount.toFixed(2)})`,
       );
     }
 
@@ -587,7 +631,7 @@ export async function POST(req: NextRequest) {
           reason: errorMsg,
         },
         200,
-        "Webhook ignored due to permanent payment verification mismatch"
+        "Webhook ignored due to permanent payment verification mismatch",
       );
     }
 
@@ -649,11 +693,11 @@ export async function POST(req: NextRequest) {
 
             const debitState = await getSpendingRequestNetDebitState(
               tx,
-              spendingRequest.id
+              spendingRequest.id,
             );
             const missingDebit = Prisma.Decimal.max(
               new Prisma.Decimal(0),
-              spendingRequest.amount.minus(debitState.netDebited)
+              spendingRequest.amount.minus(debitState.netDebited),
             ).toDecimalPlaces(2);
 
             if (missingDebit.gt(0)) {
@@ -687,7 +731,7 @@ export async function POST(req: NextRequest) {
                 : new Prisma.Decimal(0);
               const decrementAmt = Prisma.Decimal.min(
                 currentLocked,
-                spendingRequest.amount
+                spendingRequest.amount,
               );
               if (decrementAmt.gt(0)) {
                 await tx.wallet.update({
@@ -741,11 +785,11 @@ export async function POST(req: NextRequest) {
 
             const debitState = await getSpendingRequestNetDebitState(
               tx,
-              spendingRequest.id
+              spendingRequest.id,
             );
             const missingDebit = Prisma.Decimal.max(
               new Prisma.Decimal(0),
-              spendingRequest.amount.minus(debitState.netDebited)
+              spendingRequest.amount.minus(debitState.netDebited),
             ).toDecimalPlaces(2);
 
             if (missingDebit.gt(0)) {
@@ -796,7 +840,7 @@ export async function POST(req: NextRequest) {
           throw new ApiError(
             400,
             "Refund event is missing unique refund ID",
-            "MISSING_REFUND_ID"
+            "MISSING_REFUND_ID",
           );
         }
 
@@ -845,7 +889,7 @@ export async function POST(req: NextRequest) {
               reason: refundCheck.reason,
             },
             200,
-            "Refund webhook ignored because live PayPal refund verification did not match"
+            "Refund webhook ignored because live PayPal refund verification did not match",
           );
         }
 
@@ -892,13 +936,12 @@ export async function POST(req: NextRequest) {
           }),
         ]);
 
-        const totalDebited =
-          debitAgg._sum.amount ?? new Prisma.Decimal(0);
+        const totalDebited = debitAgg._sum.amount ?? new Prisma.Decimal(0);
         const totalRestoredSoFar =
           reversalAgg._sum.amount ?? new Prisma.Decimal(0);
         const netDebitedRemaining = Prisma.Decimal.max(
           new Prisma.Decimal(0),
-          totalDebited.minus(totalRestoredSoFar)
+          totalDebited.minus(totalRestoredSoFar),
         );
 
         // If a REFUNDED event arrives before the synchronous/webhook DEBIT has been recorded,
@@ -907,7 +950,7 @@ export async function POST(req: NextRequest) {
           throw new ApiError(
             409,
             `Refund ${refundId} arrived before capture debit was recorded for SpendingRequest ${spendingRequest.id}`,
-            "REFUND_BEFORE_DEBIT_RETRY"
+            "REFUND_BEFORE_DEBIT_RETRY",
           );
         }
 
@@ -917,7 +960,7 @@ export async function POST(req: NextRequest) {
 
         const amountToRestore = Prisma.Decimal.min(
           requestedRestore,
-          netDebitedRemaining
+          netDebitedRemaining,
         ).toDecimalPlaces(2);
 
         if (amountToRestore.gt(0) && spendingRequest.child.wallet) {
@@ -957,8 +1000,7 @@ export async function POST(req: NextRequest) {
               status: "COMPLETED",
               idempotencyKey: reversalIdempotencyKey,
               referenceId: spendingRequest.id,
-              paypalOrderId:
-                relatedOrderId ?? spendingRequest.paypalOrderId,
+              paypalOrderId: relatedOrderId ?? spendingRequest.paypalOrderId,
               paypalCaptureId: captureId,
               description: `Restored $${amountToRestore.toFixed(2)} to Spend bucket (${eventType} for ${spendingRequest.recipientPaypalEmail})`,
               metadata: {
@@ -1051,7 +1093,7 @@ export async function POST(req: NextRequest) {
               nextStatus,
             },
           },
-          tx
+          tx,
         );
       });
     }
@@ -1074,7 +1116,7 @@ export async function POST(req: NextRequest) {
     return apiSuccess(
       { eventId: rawBody.id, eventType: rawBody.event_type, processed: true },
       200,
-      "Webhook processed successfully"
+      "Webhook processed successfully",
     );
   } catch (error) {
     return handleRouteError(error);

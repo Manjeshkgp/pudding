@@ -3,9 +3,18 @@ import TopBar from "@/components/top-bar";
 import { ChevronRightIcon } from "@/components/icons";
 
 const LINKS = [
-  { label: "Parent and Guardian Agreement", href: "/legal/guardian?returnTo=%2Fsetup" },
-  { label: "Payment and Refund Policy", href: "/legal/payments?returnTo=%2Fsetup" },
-  { label: "Contact support", href: "/legal/support?returnTo=%2Fsetup" },
+  {
+    label: "Parent and Guardian Agreement",
+    href: "/legal/guardian?returnTo=%2Fonboarding%2Fsetup",
+  },
+  {
+    label: "Payment and Refund Policy",
+    href: "/legal/payments?returnTo=%2Fonboarding%2Fsetup",
+  },
+  {
+    label: "Contact support",
+    href: "/legal/support?returnTo=%2Fonboarding%2Fsetup",
+  },
 ];
 
 export default function SetupScreen() {
@@ -26,11 +35,17 @@ export default function SetupScreen() {
         <section className="flex flex-col gap-6 px-4 tracking-[-0.17px]">
           <p className="text-[17px] leading-[25px] text-black">
             By continuing, you agree to the{" "}
-            <Link href="/legal/terms?returnTo=%2Fsetup" className="font-medium leading-[22px] text-[#276ef1]">
+            <Link
+              href="/legal/terms?returnTo=%2Fonboarding%2Fsetup"
+              className="font-medium leading-[22px] text-[#276ef1]"
+            >
               Pudding Terms &amp; Conditions
             </Link>{" "}
             and acknowledge the{" "}
-            <Link href="/legal/privacy?returnTo=%2Fsetup" className="font-medium leading-[22px] text-[#276ef1]">
+            <Link
+              href="/legal/privacy?returnTo=%2Fonboarding%2Fsetup"
+              className="font-medium leading-[22px] text-[#276ef1]"
+            >
               Privacy Notice
             </Link>
             . If you are setting up an account for a child, you confirm that you
@@ -52,7 +67,7 @@ export default function SetupScreen() {
 
         <div className="mt-auto px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
           <Link
-            href="/email"
+            href="/onboarding/email"
             className="relative flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
           >
             Continue

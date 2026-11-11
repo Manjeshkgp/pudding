@@ -1,4 +1,5 @@
 import {
+  LedgerEntry,
   LedgerEntryType,
   LedgerStatus,
   Prisma,
@@ -10,36 +11,32 @@ import { ApiError } from "@/lib/api-response";
 export interface SplitAllocation {
   spend: Prisma.Decimal;
   save: Prisma.Decimal;
-  give: Prisma.Decimal;
 }
 
 /**
- * Splits an amount across Spend, Save, and Give buckets using integer percentages
+ * Splits an amount across Spend and Save using integer percentages
  * that sum to 100%, ensuring exact cent rounding (any rounding remainder goes to Spend).
  */
 export function calculateBucketSplit(
   totalAmount: Prisma.Decimal,
   splitSpend: number,
   splitSave: number,
-  splitGive: number
 ): SplitAllocation {
-  if (splitSpend + splitSave + splitGive !== 100) {
+  if (splitSpend + splitSave !== 100) {
     throw new ApiError(
       400,
       "Bucket split percentages must add up to 100%",
-      "INVALID_BUCKET_SPLIT"
+      "INVALID_BUCKET_SPLIT",
     );
   }
 
   const totalCents = Math.round(totalAmount.mul(100).toNumber());
   const saveCents = Math.floor((totalCents * splitSave) / 100);
-  const giveCents = Math.floor((totalCents * splitGive) / 100);
-  const spendCents = totalCents - saveCents - giveCents;
+  const spendCents = totalCents - saveCents;
 
   return {
     spend: new Prisma.Decimal(spendCents).div(100).toDecimalPlaces(2),
     save: new Prisma.Decimal(saveCents).div(100).toDecimalPlaces(2),
-    give: new Prisma.Decimal(giveCents).div(100).toDecimalPlaces(2),
   };
 }
 
@@ -67,6 +64,7 @@ export async function addVirtualFamilyBudget(params: AddFamilyBudgetParams) {
     where: { idempotencyKey: params.idempotencyKey },
   });
   if (existingEntry) {
+    assertReplay(existingEntry, params.familyId, amount);
     const family = await prisma.family.findUniqueOrThrow({
       where: { id: params.familyId },
     });
@@ -87,7 +85,7 @@ export async function addVirtualFamilyBudget(params: AddFamilyBudgetParams) {
     throw new ApiError(
       400,
       `Amount exceeds the per-transaction limit of $${maxPerTx.toFixed(2)}`,
-      "FUNDING_LIMIT_EXCEEDED"
+      "FUNDING_LIMIT_EXCEEDED",
     );
   }
 
@@ -110,7 +108,7 @@ export async function addVirtualFamilyBudget(params: AddFamilyBudgetParams) {
     throw new ApiError(
       400,
       `Adding $${amount.toFixed(2)} would exceed the daily family budget limit of $${maxPerDay.toFixed(2)}`,
-      "DAILY_FUNDING_LIMIT_EXCEEDED"
+      "DAILY_FUNDING_LIMIT_EXCEEDED",
     );
   }
 
@@ -158,7 +156,7 @@ export interface AdjustFamilyBudgetParams {
  * Guarantees unallocatedBudget never goes below 0.00.
  */
 export async function reduceVirtualFamilyBudget(
-  params: AdjustFamilyBudgetParams
+  params: AdjustFamilyBudgetParams,
 ) {
   const amount = new Prisma.Decimal(params.amount).toDecimalPlaces(2);
   if (amount.lte(0)) {
@@ -169,6 +167,7 @@ export async function reduceVirtualFamilyBudget(
     where: { idempotencyKey: params.idempotencyKey },
   });
   if (existingEntry) {
+    assertReplay(existingEntry, params.familyId, amount);
     const family = await prisma.family.findUniqueOrThrow({
       where: { id: params.familyId },
     });
@@ -178,7 +177,11 @@ export async function reduceVirtualFamilyBudget(
   return prisma.$transaction(async (tx) => {
     // Row-level lock on Family to prevent concurrent overdraft
     const rows = await tx.$queryRaw<
-      Array<{ id: string; unallocatedBudget: Prisma.Decimal; isFrozen: boolean }>
+      Array<{
+        id: string;
+        unallocatedBudget: Prisma.Decimal;
+        isFrozen: boolean;
+      }>
     >`SELECT "id", "unallocatedBudget", "isFrozen" FROM "Family" WHERE "id" = ${params.familyId} FOR UPDATE`;
 
     const lockedFamily = rows[0];
@@ -194,7 +197,7 @@ export async function reduceVirtualFamilyBudget(
       throw new ApiError(
         400,
         `Cannot reduce budget by $${amount.toFixed(2)}. Available unallocated budget is $${currentBudget.toFixed(2)}.`,
-        "INSUFFICIENT_FAMILY_BUDGET"
+        "INSUFFICIENT_FAMILY_BUDGET",
       );
     }
 
@@ -231,7 +234,7 @@ export interface TransferFamilyToChildParams {
   amount: number | string | Prisma.Decimal;
   idempotencyKey: string;
   entryType: LedgerEntryType;
-  targetBucket?: "DEFAULT_SPLIT" | "SPEND" | "SAVE" | "GIVE";
+  targetBucket?: "DEFAULT_SPLIT" | "SPEND" | "SAVE";
   referenceId?: string;
   actorUserId?: string;
   description: string;
@@ -245,7 +248,8 @@ export interface TransferFamilyToChildParams {
  * Creates double-entry LedgerEntry rows: DEBIT on FAMILY_BUDGET and CREDIT(s) on Child bucket(s).
  */
 export async function transferFromFamilyToChild(
-  params: TransferFamilyToChildParams
+  params: TransferFamilyToChildParams,
+  transaction?: Prisma.TransactionClient,
 ) {
   const amount = new Prisma.Decimal(params.amount).toDecimalPlaces(2);
   if (amount.lte(0)) {
@@ -253,14 +257,22 @@ export async function transferFromFamilyToChild(
   }
 
   const debitKey = `${params.idempotencyKey}:family-debit`;
-  const existingDebit = await prisma.ledgerEntry.findUnique({
+  const db = transaction ?? prisma;
+  const existingDebit = await db.ledgerEntry.findUnique({
     where: { idempotencyKey: debitKey },
   });
   if (existingDebit) {
-    const wallet = await prisma.wallet.findUniqueOrThrow({
+    assertReplay(
+      existingDebit,
+      params.familyId,
+      amount,
+      params.childId,
+      params.entryType,
+    );
+    const wallet = await db.wallet.findUniqueOrThrow({
       where: { childId: params.childId },
     });
-    const family = await prisma.family.findUniqueOrThrow({
+    const family = await db.family.findUniqueOrThrow({
       where: { id: params.familyId },
     });
     return {
@@ -271,7 +283,7 @@ export async function transferFromFamilyToChild(
     };
   }
 
-  return prisma.$transaction(async (tx) => {
+  const transfer = async (tx: Prisma.TransactionClient) => {
     // 1. Lock Family row
     const familyRows = await tx.$queryRaw<
       Array<{
@@ -283,6 +295,28 @@ export async function transferFromFamilyToChild(
       }>
     >`SELECT "id", "unallocatedBudget", "autoTopUpAmount", "autoTopUpThreshold", "isFrozen" FROM "Family" WHERE "id" = ${params.familyId} FOR UPDATE`;
 
+    const replay = await tx.ledgerEntry.findUnique({
+      where: { idempotencyKey: debitKey },
+    });
+    if (replay) {
+      assertReplay(
+        replay,
+        params.familyId,
+        amount,
+        params.childId,
+        params.entryType,
+      );
+      return {
+        family: await tx.family.findUniqueOrThrow({
+          where: { id: params.familyId },
+        }),
+        wallet: await tx.wallet.findUniqueOrThrow({
+          where: { childId: params.childId },
+        }),
+        entries: [replay],
+        idempotentReplay: true,
+      };
+    }
     const lockedFamily = familyRows[0];
     if (!lockedFamily) {
       throw new ApiError(404, "Family not found", "FAMILY_NOT_FOUND");
@@ -298,10 +332,10 @@ export async function transferFromFamilyToChild(
         childId: string;
         defaultSplitSpend: number;
         defaultSplitSave: number;
-        defaultSplitGive: number;
+
         isFrozen: boolean;
       }>
-    >`SELECT "id", "childId", "defaultSplitSpend", "defaultSplitSave", "defaultSplitGive", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
+    >`SELECT "id", "childId", "defaultSplitSpend", "defaultSplitSave", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
 
     const lockedWallet = walletRows[0];
     if (!lockedWallet) {
@@ -320,7 +354,10 @@ export async function transferFromFamilyToChild(
         ? new Prisma.Decimal(lockedFamily.autoTopUpThreshold)
         : new Prisma.Decimal(0);
 
-      if (currentBudget.minus(amount).lt(threshold) || currentBudget.lt(amount)) {
+      if (
+        currentBudget.minus(amount).lt(threshold) ||
+        currentBudget.lt(amount)
+      ) {
         const topUpAmt = new Prisma.Decimal(lockedFamily.autoTopUpAmount);
         // Ensure top-up covers the needed amount
         const needed = amount.minus(currentBudget);
@@ -359,7 +396,7 @@ export async function transferFromFamilyToChild(
         {
           availableBudget: currentBudget.toString(),
           requiredAmount: amount.toString(),
-        }
+        },
       );
     }
 
@@ -397,24 +434,19 @@ export async function transferFromFamilyToChild(
     const mode = params.targetBucket || "DEFAULT_SPLIT";
     let spendInc = new Prisma.Decimal(0);
     let saveInc = new Prisma.Decimal(0);
-    let giveInc = new Prisma.Decimal(0);
 
     if (mode === "DEFAULT_SPLIT") {
       const split = calculateBucketSplit(
         amount,
         lockedWallet.defaultSplitSpend,
         lockedWallet.defaultSplitSave,
-        lockedWallet.defaultSplitGive
       );
       spendInc = split.spend;
       saveInc = split.save;
-      giveInc = split.give;
     } else if (mode === "SPEND") {
       spendInc = amount;
     } else if (mode === "SAVE") {
       saveInc = amount;
-    } else if (mode === "GIVE") {
-      giveInc = amount;
     }
 
     const updatedWallet = await tx.wallet.update({
@@ -422,15 +454,14 @@ export async function transferFromFamilyToChild(
       data: {
         spendBalance: { increment: spendInc },
         saveBalance: { increment: saveInc },
-        giveBalance: { increment: giveInc },
       },
     });
 
-    const bucketCredits: Array<{ bucket: WalletBucket; amt: Prisma.Decimal }> = [
-      { bucket: "SPEND", amt: spendInc },
-      { bucket: "SAVE", amt: saveInc },
-      { bucket: "GIVE", amt: giveInc },
-    ];
+    const bucketCredits: Array<{ bucket: WalletBucket; amt: Prisma.Decimal }> =
+      [
+        { bucket: "SPEND", amt: spendInc },
+        { bucket: "SAVE", amt: saveInc },
+      ];
 
     for (const item of bucketCredits) {
       if (item.amt.gt(0)) {
@@ -462,14 +493,15 @@ export async function transferFromFamilyToChild(
       entries: createdEntries,
       idempotentReplay: false,
     };
-  });
+  };
+  return transaction ? transfer(transaction) : prisma.$transaction(transfer);
 }
 
 export interface MoveBetweenChildBucketsParams {
   familyId: string;
   childId: string;
-  fromBucket: "SPEND" | "SAVE" | "GIVE";
-  toBucket: "SPEND" | "SAVE" | "GIVE";
+  fromBucket: "SPEND" | "SAVE";
+  toBucket: "SPEND" | "SAVE";
   amount: number | string | Prisma.Decimal;
   idempotencyKey: string;
   actorUserId?: string;
@@ -478,11 +510,11 @@ export interface MoveBetweenChildBucketsParams {
 }
 
 /**
- * Moves money between a child's own buckets (e.g., SPEND -> SAVE or SPEND -> GIVE).
+ * Moves virtual allowance between a child's Spend and Save buckets.
  * Enforces non-negative balance (FR-3.3) and records double-entry ledger rows (FR-3.4).
  */
 export async function moveBetweenChildBuckets(
-  params: MoveBetweenChildBucketsParams
+  params: MoveBetweenChildBucketsParams,
 ) {
   if (params.fromBucket === params.toBucket) {
     throw new ApiError(400, "Source and destination buckets must be different");
@@ -498,6 +530,13 @@ export async function moveBetweenChildBuckets(
     where: { idempotencyKey: debitKey },
   });
   if (existing) {
+    assertReplay(
+      existing,
+      params.familyId,
+      amount,
+      params.childId,
+      "BUCKET_TRANSFER",
+    );
     const wallet = await prisma.wallet.findUniqueOrThrow({
       where: { childId: params.childId },
     });
@@ -509,12 +548,32 @@ export async function moveBetweenChildBuckets(
       Array<{
         id: string;
         spendBalance: Prisma.Decimal;
+        purchaseReservedBalance: Prisma.Decimal;
         saveBalance: Prisma.Decimal;
-        giveBalance: Prisma.Decimal;
+
         isFrozen: boolean;
       }>
-    >`SELECT "id", "spendBalance", "saveBalance", "giveBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
+    >`SELECT "id", "spendBalance", "purchaseReservedBalance", "saveBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
 
+    const replay = await tx.ledgerEntry.findUnique({
+      where: { idempotencyKey: debitKey },
+    });
+    if (replay) {
+      assertReplay(
+        replay,
+        params.familyId,
+        amount,
+        params.childId,
+        "BUCKET_TRANSFER",
+      );
+      return {
+        wallet: await tx.wallet.findUniqueOrThrow({
+          where: { childId: params.childId },
+        }),
+        entries: [replay],
+        idempotentReplay: true,
+      };
+    }
     const lockedWallet = rows[0];
     if (!lockedWallet) {
       throw new ApiError(404, "Wallet not found", "WALLET_NOT_FOUND");
@@ -523,25 +582,26 @@ export async function moveBetweenChildBuckets(
       throw new ApiError(
         403,
         "Child wallet is currently frozen",
-        "WALLET_FROZEN"
+        "WALLET_FROZEN",
       );
     }
 
     const bucketFieldMap = {
       SPEND: "spendBalance",
       SAVE: "saveBalance",
-      GIVE: "giveBalance",
     } as const;
 
     const fromField = bucketFieldMap[params.fromBucket];
     const toField = bucketFieldMap[params.toBucket];
 
-    const availableInSource = new Prisma.Decimal(lockedWallet[fromField]);
+    const availableInSource = new Prisma.Decimal(lockedWallet[fromField]).minus(
+      params.fromBucket === "SPEND" ? lockedWallet.purchaseReservedBalance : 0,
+    );
     if (availableInSource.lt(amount)) {
       throw new ApiError(
         400,
         `Insufficient funds in ${params.fromBucket} bucket ($${availableInSource.toFixed(2)} available)`,
-        "INSUFFICIENT_BUCKET_BALANCE"
+        "INSUFFICIENT_BUCKET_BALANCE",
       );
     }
 
@@ -600,7 +660,7 @@ export async function moveBetweenChildBuckets(
 export interface DebitChildBucketParams {
   familyId: string;
   childId: string;
-  bucket: "SPEND" | "SAVE" | "GIVE";
+  bucket: "SPEND" | "SAVE";
   amount: number | string | Prisma.Decimal;
   idempotencyKey: string;
   entryType: LedgerEntryType;
@@ -626,7 +686,7 @@ export interface DebitChildBucketParams {
  */
 export async function getSpendingRequestNetDebitState(
   tx: Prisma.TransactionClient,
-  spendingRequestId: string
+  spendingRequestId: string,
 ) {
   const [debitAgg, reversalAgg] = await Promise.all([
     tx.ledgerEntry.aggregate({
@@ -653,7 +713,7 @@ export async function getSpendingRequestNetDebitState(
   const totalRestored = reversalAgg._sum.amount ?? new Prisma.Decimal(0);
   const netDebited = Prisma.Decimal.max(
     new Prisma.Decimal(0),
-    totalDebited.minus(totalRestored)
+    totalDebited.minus(totalRestored),
   );
   const debitCount = debitAgg._count._all;
   const reversalCount = reversalAgg._count._all;
@@ -670,7 +730,7 @@ export async function getSpendingRequestNetDebitState(
 }
 
 /**
- * Atomically debits a child's bucket (e.g., for Spend Option A, Spend Option B, Goal Deposit, or Donation).
+ * Atomically debits a child's bucket (e.g., for Spend Option A, Spend Option B, or Goal Deposit).
  * If lockAsPendingClaim is true (PayPal UNCLAIMED/PENDING), moves the amount into lockedPendingBalance.
  * Supports participating in a caller-provided interactive transaction (`params.tx`) so request locks
  * and wallet debits execute in a single atomic transaction.
@@ -686,6 +746,13 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
       where: { idempotencyKey: params.idempotencyKey },
     });
     if (existing) {
+      assertReplay(
+        existing,
+        params.familyId,
+        amount,
+        params.childId,
+        params.entryType,
+      );
       const wallet = await tx.wallet.findUniqueOrThrow({
         where: { childId: params.childId },
       });
@@ -696,13 +763,33 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
       Array<{
         id: string;
         spendBalance: Prisma.Decimal;
+        purchaseReservedBalance: Prisma.Decimal;
         saveBalance: Prisma.Decimal;
-        giveBalance: Prisma.Decimal;
+
         lockedPendingBalance: Prisma.Decimal;
         isFrozen: boolean;
       }>
-    >`SELECT "id", "spendBalance", "saveBalance", "giveBalance", "lockedPendingBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
+    >`SELECT "id", "spendBalance", "purchaseReservedBalance", "saveBalance", "lockedPendingBalance", "isFrozen" FROM "Wallet" WHERE "childId" = ${params.childId} FOR UPDATE`;
 
+    const replay = await tx.ledgerEntry.findUnique({
+      where: { idempotencyKey: params.idempotencyKey },
+    });
+    if (replay) {
+      assertReplay(
+        replay,
+        params.familyId,
+        amount,
+        params.childId,
+        params.entryType,
+      );
+      return {
+        wallet: await tx.wallet.findUniqueOrThrow({
+          where: { childId: params.childId },
+        }),
+        ledgerEntry: replay,
+        idempotentReplay: true,
+      };
+    }
     const lockedWallet = rows[0];
     if (!lockedWallet) {
       throw new ApiError(404, "Child wallet not found", "WALLET_NOT_FOUND");
@@ -711,24 +798,25 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
       throw new ApiError(
         403,
         "Child wallet is currently frozen",
-        "WALLET_FROZEN"
+        "WALLET_FROZEN",
       );
     }
 
     const bucketFieldMap = {
       SPEND: "spendBalance",
       SAVE: "saveBalance",
-      GIVE: "giveBalance",
     } as const;
 
     const field = bucketFieldMap[params.bucket];
-    const currentBalance = new Prisma.Decimal(lockedWallet[field]);
+    const currentBalance = new Prisma.Decimal(lockedWallet[field]).minus(
+      params.bucket === "SPEND" ? lockedWallet.purchaseReservedBalance : 0,
+    );
 
     if (currentBalance.lt(amount)) {
       throw new ApiError(
         400,
         `Insufficient ${params.bucket} balance ($${currentBalance.toFixed(2)} available, $${amount.toFixed(2)} required)`,
-        "INSUFFICIENT_CHILD_BALANCE"
+        "INSUFFICIENT_CHILD_BALANCE",
       );
     }
 
@@ -778,4 +866,24 @@ export async function debitChildBucket(params: DebitChildBucketParams) {
   }
 
   return prisma.$transaction(executeDebit);
+}
+
+function assertReplay(
+  entry: LedgerEntry,
+  familyId: string,
+  amount: Prisma.Decimal,
+  childId?: string,
+  type?: LedgerEntryType,
+) {
+  if (
+    entry.familyId !== familyId ||
+    !entry.amount.equals(amount) ||
+    (childId !== undefined && entry.childId !== childId) ||
+    (type !== undefined && entry.type !== type)
+  )
+    throw new ApiError(
+      409,
+      "This request key belongs to a different ledger operation.",
+      "IDEMPOTENCY_CONFLICT",
+    );
 }

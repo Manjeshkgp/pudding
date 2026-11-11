@@ -1,11 +1,8 @@
+import { olderThan, pageCursor, pageSize, takePage } from "@/lib/list-page";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import {
-  apiSuccess,
-  handleRouteError,
-  validateBody,
-} from "@/lib/api-response";
+import { apiSuccess, handleRouteError, validateBody } from "@/lib/api-response";
 import { requireAuth, requireParent } from "@/lib/auth-guard";
 
 const markNotificationsReadSchema = z.object({
@@ -40,14 +37,20 @@ export async function GET(req: NextRequest) {
         : {
             familyId: session.familyId,
             childId: null,
+            OR: [{ userId: null }, { userId: session.sub }],
             ...(unreadOnly ? { isRead: false } : {}),
           };
 
     const [notifications, unreadCount] = await Promise.all([
       prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: 50,
+        where: {
+          AND: [
+            where,
+            olderThan("createdAt", pageCursor(req.nextUrl.searchParams)),
+          ],
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: pageSize + 1,
       }),
       prisma.notification.count({
         where: { ...where, isRead: false },
@@ -56,7 +59,8 @@ export async function GET(req: NextRequest) {
 
     return apiSuccess({
       unreadCount,
-      notifications,
+      ...takePage(notifications, "createdAt"),
+      notifications: notifications.slice(0, pageSize),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -75,7 +79,11 @@ export async function PATCH(req: NextRequest) {
     const baseScope =
       session.subjectType === "CHILD"
         ? { childId: session.sub }
-        : { familyId: session.familyId, childId: null };
+        : {
+            familyId: session.familyId,
+            childId: null,
+            OR: [{ userId: null }, { userId: session.sub }],
+          };
 
     if (input.markAllRead) {
       await prisma.notification.updateMany({
@@ -147,7 +155,7 @@ export async function PUT(req: NextRequest) {
           updated.notifyThresholdAmount?.toString() ?? null,
       },
       200,
-      "Notification preferences updated"
+      "Notification preferences updated",
     );
   } catch (error) {
     return handleRouteError(error);

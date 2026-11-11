@@ -15,7 +15,7 @@ import { getRequestMeta, writeAuditLog } from "@/lib/audit";
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: requestId } = await context.params;
@@ -35,7 +35,7 @@ export async function POST(
       throw new ApiError(
         404,
         "Spending request not found in your family",
-        "REQUEST_NOT_FOUND"
+        "REQUEST_NOT_FOUND",
       );
     }
 
@@ -43,7 +43,7 @@ export async function POST(
       throw new ApiError(
         400,
         "Only Option A (PayPal Email) requests use PayPal Checkout",
-        "INVALID_OPTION_TYPE"
+        "INVALID_OPTION_TYPE",
       );
     }
 
@@ -51,7 +51,7 @@ export async function POST(
       throw new ApiError(
         400,
         "Spending request is missing recipientPaypalEmail",
-        "MISSING_RECIPIENT_EMAIL"
+        "MISSING_RECIPIENT_EMAIL",
       );
     }
 
@@ -62,7 +62,7 @@ export async function POST(
       throw new ApiError(
         409,
         `This spending request has already been paid (status: ${spendingRequest.status})`,
-        "ALREADY_PAID"
+        "ALREADY_PAID",
       );
     }
 
@@ -74,7 +74,7 @@ export async function POST(
       throw new ApiError(
         409,
         `Cannot initiate PayPal order for request in status: ${spendingRequest.status}`,
-        "INVALID_REQUEST_STATUS"
+        "INVALID_REQUEST_STATUS",
       );
     }
 
@@ -84,7 +84,7 @@ export async function POST(
       throw new ApiError(
         400,
         `Child's Spend bucket balance ($${wallet?.spendBalance.toFixed(2) ?? "0.00"}) is insufficient for this $${spendingRequest.amount.toFixed(2)} payment`,
-        "INSUFFICIENT_CHILD_BALANCE"
+        "INSUFFICIENT_CHILD_BALANCE",
       );
     }
 
@@ -97,7 +97,7 @@ export async function POST(
       currencyCode: family.currency,
       recipientEmail: spendingRequest.recipientPaypalEmail,
       customId: spendingRequest.id,
-      description: `GoodSpend: ${spendingRequest.purpose} (for ${spendingRequest.child.name})`,
+      description: `Pudding: ${spendingRequest.purpose} (for ${spendingRequest.child.name})`,
       idempotencyKey,
     });
 
@@ -116,7 +116,7 @@ export async function POST(
         throw new ApiError(
           409,
           `Cannot persist PayPal order for request in status: ${currentReq?.status ?? spendingRequest.status}`,
-          "INVALID_REQUEST_STATUS"
+          "INVALID_REQUEST_STATUS",
         );
       }
 
@@ -133,7 +133,7 @@ export async function POST(
 
     const approveLink =
       paypalOrder.links?.find(
-        (l) => l.rel === "approve" || l.rel === "payer-action"
+        (l) => l.rel === "approve" || l.rel === "payer-action",
       )?.href ?? null;
 
     await writeAuditLog({
@@ -163,7 +163,7 @@ export async function POST(
         recipientEmailWarning: RECIPIENT_EMAIL_WARNING_MESSAGE,
       },
       201,
-      "PayPal order created. Confirm payment in the PayPal checkout window."
+      "PayPal order created. Confirm payment in the PayPal checkout window.",
     );
   } catch (error) {
     return handleRouteError(error);

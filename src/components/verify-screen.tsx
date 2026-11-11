@@ -11,7 +11,7 @@ import {
   TickCircleIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
-import { postApi } from "@/lib/client-api";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 4: email verification.
 // States from Figma: empty, code entered, invalid code, resend active,
@@ -37,6 +37,15 @@ export default function VerifyScreen() {
   const onKeyboard = focused && open;
 
   // Show the email typed on the previous screen
+  useEffect(() => {
+    getApi<{ emailVerified: boolean; nextRoute: string }>(
+      "/api/auth/parent/signup/status",
+    )
+      .then((r) => {
+        if (r.emailVerified) router.replace(r.nextRoute);
+      })
+      .catch(() => undefined);
+  }, [router]);
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("pudding-email");
@@ -64,7 +73,7 @@ export default function VerifyScreen() {
     setLoading(true);
     try {
       await postApi("/api/auth/parent/signup/verify", { code });
-      router.push("/password");
+      router.push("/onboarding/password");
     } catch (cause) {
       setLoading(false);
       setInvalid(true);
@@ -85,11 +94,16 @@ export default function VerifyScreen() {
       );
       setDevOtp(result.devOtpCode || "");
       try {
-        if (result.devOtpCode) sessionStorage.setItem("pudding-dev-otp", result.devOtpCode);
+        if (result.devOtpCode)
+          sessionStorage.setItem("pudding-dev-otp", result.devOtpCode);
         else sessionStorage.removeItem("pudding-dev-otp");
       } catch {}
       setSeconds(WAIT_SECONDS);
-      setToast({ id: Date.now(), kind: "success", text: "Code has been sent." });
+      setToast({
+        id: Date.now(),
+        kind: "success",
+        text: "Code has been sent.",
+      });
     } catch (cause) {
       setToast({
         id: Date.now(),
@@ -113,14 +127,16 @@ export default function VerifyScreen() {
     complete || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
   const barInner = loading ? (
     <SpinnerIcon className="size-6 text-white" />
+  ) : code === "" ? (
+    "Continue"
   ) : (
-    code === "" ? "Continue" : "Verify"
+    "Verify"
   );
 
   return (
     <main className="min-h-dvh bg-white">
       <div className="relative w-full bg-white">
-        <TopBar backHref="/email" />
+        <TopBar backHref="/onboarding/email" />
 
         <AnimatePresence>
           {toast && (
@@ -168,7 +184,10 @@ export default function VerifyScreen() {
         </header>
 
         {devOtp && (
-          <p className="mx-4 mb-4 rounded-lg bg-[#fff6d8] px-3 py-2 text-sm text-black" role="status">
+          <p
+            className="mx-4 mb-4 rounded-lg bg-[#fff6d8] px-3 py-2 text-sm text-black"
+            role="status"
+          >
             Development verification code: <strong>{devOtp}</strong>
           </p>
         )}

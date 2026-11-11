@@ -1,28 +1,56 @@
 import { notFound } from "next/navigation";
 import LegalDoc from "@/components/legal-doc";
 
-// Sample text only. Every document uses the same made-up body for now.
-const BODY = [
-  "As part of the registration process, we collect personal information about you and your child, including names, dates of birth, contact details and account information. We may also collect transaction details, payment activity and device information to provide our services, manage accounts and help families keep track of their money.",
-  "To provide our services, we may share relevant information with trusted third-party service providers who support us with account management, payment processing, security and fraud prevention. Payments are processed through PayPal, which handles payment information in accordance with its own privacy policy and terms of service.",
-  "We use the information we collect to operate your account, process payments, monitor transactions, provide parental controls and improve the experience. We take reasonable steps to protect personal information and prevent unauthorised access or disclosure.",
-  "Parents and legal guardians can request access to their child's personal information, ask for corrections or request account-related changes, subject to applicable laws and requirements.",
-  "We do not sell children's personal information. Information is shared only where necessary to provide our services, meet legal obligations or protect the security of our users.",
-  "For further details about how we collect, use and protect your information, please refer to our Privacy Policy or contact our support team.",
-];
-
-const DOCS: Record<string, { title: string; label: string }> = {
-  terms: { title: "Terms & Conditions", label: "Pudding privacy notice" },
-  privacy: { title: "Privacy Notice", label: "Pudding privacy notice" },
+const DOCS: Record<
+  string,
+  { title: string; label: string; paragraphs: string[] }
+> = {
+  terms: {
+    title: "Demo Terms & Conditions",
+    label: "Pudding demo terms",
+    paragraphs: [
+      "Pudding is a workable family money demo for the PayPal AI hackathon. Use PayPal Sandbox accounts for all payments.",
+      "Parents manage their family, activate child accounts, allocate virtual allowance, and decide which purchases are appropriate. AI review supports the demo and can route a purchase to the parent when unavailable.",
+      "A top-up increases an internal limit shared by all children on the account. It does not deposit or transfer money into Pudding. Approved purchases create separate PayPal Sandbox payments.",
+    ],
+  },
+  privacy: {
+    title: "Demo Privacy Notice",
+    label: "Pudding demo privacy",
+    paragraphs: [
+      "The demo stores parent account details, hashed passwords and PINs, child profiles, consent records, virtual wallet activity, invoices and purchase decisions.",
+      "PayPal handles wallet approval and Sandbox payments. Pudding stores PayPal identifiers and the saved payment token on the server. These are not exposed to children or included in AI requests.",
+      "Invoice review sends sample item names, quantities, prices, currency, child's age and the age-review setting to Google Gemini. The purchase camera image is not retained or sent to the model in this demo. For chores, before/after task photos, task title, description and the child’s note are sent to Gemini to assess visible progress. These photos are stored privately in the demo database and accessible to the child and authorized family parents. Google may use free-tier inputs to improve its products; use sample photos without people or private details.",
+      "Browser notifications are optional. You can manage notification preferences in Accounts and view updates in the in-app inbox.",
+    ],
+  },
   guardian: {
     title: "Parent and Guardian Agreement",
-    label: "Pudding parent and guardian agreement",
+    label: "Parent and guardian information",
+    paragraphs: [
+      "Only a parent or authorized guardian should create and manage a child's profile. Use Sandbox accounts and demo information when exploring Pudding.",
+      "Parents supervise purchase decisions, control their child's limits and keep login PINs private. Each child has a separate username and six-digit PIN.",
+      "Co-parent permissions control access to family actions. A co-parent approving a demo purchase uses the primary parent's saved Sandbox wallet, rather than adding a separate payment source.",
+    ],
   },
   payments: {
-    title: "Payment and Refund Policy",
-    label: "Pudding payment and refund policy",
+    title: "Demo Payments Information",
+    label: "Pudding demo payments",
+    paragraphs: [
+      "Top-ups increase a permanent internal family spending limit. They do not request a PayPal transfer. The limit applies to accumulated spending across all children on the account, with no monthly or yearly reset.",
+      "Only an approved invoice triggers a separate Sandbox payment using the primary parent's saved PayPal wallet. Sandbox proceeds go to the Sandbox business account that owns the app, representing a purchase in this demo.",
+      "A purchase is shown as paid only after PayPal confirms a completed capture. A declined invoice does not charge the wallet. An uncertain payment stays pending until its outcome can be checked.",
+      "Live payments, refunds and disputes are outside the current hackathon payment demo.",
+    ],
   },
-  support: { title: "Contact support", label: "Pudding support" },
+  support: {
+    title: "Contact support",
+    label: "Pudding demo support",
+    paragraphs: [
+      "Open Accounts, then Contact support to save a demo support request. Requests are stored with your account and can be viewed on that page.",
+      "The demo does not contact an external support team. For a child login issue, the parent can open Family, choose Manage for the child, and set or reset the child's PIN.",
+    ],
+  },
 };
 
 export function generateStaticParams() {
@@ -42,14 +70,22 @@ export default async function LegalPage({
   if (!doc) notFound();
 
   // Only accept known in-app destinations so a crafted query cannot create an open redirect.
-  const backHref = ["/setup", "/plan"].includes(returnTo ?? "") ? returnTo! : "/setup";
+  const backHref = [
+    "/onboarding/setup",
+    "/onboarding/paypal",
+    "/account",
+    "/account/paypal",
+    "/family",
+  ].includes(returnTo ?? "")
+    ? returnTo!
+    : "/onboarding";
 
   return (
     <LegalDoc
       title={doc.title}
       label={doc.label}
-      date="6 November 2026"
-      paragraphs={BODY}
+      date="11 November 2026"
+      paragraphs={doc.paragraphs}
       backHref={backHref}
     />
   );

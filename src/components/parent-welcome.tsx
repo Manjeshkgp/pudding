@@ -62,7 +62,7 @@ export default function ParentWelcome() {
           </h1>
           <div className="mt-6 flex w-full flex-col gap-3">
             <Link
-              href="/setup"
+              href="/onboarding/setup"
               className="relative flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
             >
               Get started

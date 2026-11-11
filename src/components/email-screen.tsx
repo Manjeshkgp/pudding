@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/top-bar";
 import { CloseCircleFilledIcon, SpinnerIcon } from "@/components/icons";
-import { postApi } from "@/lib/client-api";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 3: email.
 // States from Figma: empty and idle, focused and empty, typing,
@@ -21,6 +21,21 @@ export default function EmailScreen() {
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [offset, setOffset] = useState(0);
 
+  const [resume, setResume] = useState<{
+    email: string;
+    emailVerified: boolean;
+    nextRoute: string;
+  } | null>(null);
+  useEffect(() => {
+    getApi<{ email: string; emailVerified: boolean; nextRoute: string }>(
+      "/api/auth/parent/signup/status",
+    )
+      .then((r) => {
+        setResume(r);
+        setEmail(r.email);
+      })
+      .catch(() => undefined);
+  }, []);
   const valid = /^\S+@\S+\.\S+$/.test(email.trim());
   const onKeyboard = focused && keyboardOpen;
 
@@ -77,6 +92,13 @@ export default function EmailScreen() {
   // Show the loading state briefly, then open the verification screen
   async function submit() {
     if (loading || !valid) return;
+    if (
+      resume?.emailVerified &&
+      resume.email.toLowerCase() === email.trim().toLowerCase()
+    ) {
+      router.push(resume.nextRoute);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -92,9 +114,11 @@ export default function EmailScreen() {
           sessionStorage.removeItem("pudding-dev-otp");
         }
       } catch {}
-      router.push("/verify");
+      router.push("/onboarding/verify");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to start signup.");
+      setError(
+        cause instanceof Error ? cause.message : "Unable to start signup.",
+      );
       setLoading(false);
     }
   }
@@ -102,7 +126,9 @@ export default function EmailScreen() {
   return (
     <main className="min-h-dvh bg-white">
       <div className="w-full bg-white">
-        <TopBar backHref="/setup" />
+        <TopBar
+          backHref={resume?.email ? "/onboarding/verify" : "/onboarding/setup"}
+        />
 
         <header className="flex flex-col gap-2 px-4 pb-8 pt-6">
           <h1 className="font-display text-[32px] font-bold leading-[40px] tracking-[-0.64px] text-black">
@@ -113,7 +139,11 @@ export default function EmailScreen() {
           </p>
         </header>
 
-        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p role="alert" className="px-4 pb-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-2 px-4"
@@ -181,7 +211,11 @@ export default function EmailScreen() {
                 : "bg-[#f3f3f3] text-[#a6a6a6]"
             }`}
           >
-            {loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue"}
+            {loading ? (
+              <SpinnerIcon className="size-6 text-white" />
+            ) : (
+              "Continue"
+            )}
           </button>
         </div>
       ) : (
@@ -198,7 +232,11 @@ export default function EmailScreen() {
                 : "bg-[#f3f3f3] text-[#a6a6a6]"
             }`}
           >
-            {loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue"}
+            {loading ? (
+              <SpinnerIcon className="size-6 text-white" />
+            ) : (
+              "Continue"
+            )}
           </button>
         </div>
       )}

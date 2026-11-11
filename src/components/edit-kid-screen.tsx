@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BackButton from "@/components/back-button";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
@@ -21,7 +22,8 @@ const ease = { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const };
 
 const circle =
   "flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]";
-const label = "text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black";
+const label =
+  "text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black";
 const fieldText = "text-[17px] leading-[25px] tracking-[-0.17px]";
 
 type FieldName = "first" | "last";
@@ -32,7 +34,13 @@ function format(d: Date | null) {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`;
 }
 
-export default function EditKidScreen({ childId }: { childId: string }) {
+export default function EditKidScreen({
+  childId,
+  returnTo = "/children",
+}: {
+  childId: string;
+  returnTo?: string;
+}) {
   const router = useRouter();
   const lastRef = useRef<HTMLInputElement>(null);
   const activeRef = useRef<HTMLInputElement | null>(null);
@@ -72,12 +80,22 @@ export default function EditKidScreen({ childId }: { childId: string }) {
           setDob(new Date(y, m - 1, d));
         }
         const avatarNumber = Number(child.avatar.replace("avatar-", "")) - 1;
-        setAvatar(Number.isInteger(avatarNumber) && avatarNumber >= 0 && avatarNumber < AVATARS.length ? avatarNumber : 0);
+        setAvatar(
+          Number.isInteger(avatarNumber) &&
+            avatarNumber >= 0 &&
+            avatarNumber < AVATARS.length
+            ? avatarNumber
+            : 0,
+        );
         setLoaded(true);
       })
       .catch((cause: unknown) => {
         if (active) {
-          setError(cause instanceof Error ? cause.message : "Unable to load child profile.");
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load child profile.",
+          );
           setLoaded(true);
         }
       });
@@ -113,8 +131,20 @@ export default function EditKidScreen({ childId }: { childId: string }) {
   }, []);
 
   const fields = [
-    { name: "first" as const, title: "First name", value: first, set: setFirst, ref: undefined },
-    { name: "last" as const, title: "Last name", value: last, set: setLast, ref: lastRef },
+    {
+      name: "first" as const,
+      title: "First name",
+      value: first,
+      set: setFirst,
+      ref: undefined,
+    },
+    {
+      name: "last" as const,
+      title: "Last name",
+      value: last,
+      set: setLast,
+      ref: lastRef,
+    },
   ];
 
   async function save() {
@@ -129,9 +159,13 @@ export default function EditKidScreen({ childId }: { childId: string }) {
         dateOfBirth: `${dob.getFullYear()}-${p(dob.getMonth() + 1)}-${p(dob.getDate())}`,
         avatar: `avatar-${avatar + 1}`,
       });
-      router.push("/crew");
+      router.replace(returnTo);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to save child profile.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to save child profile.",
+      );
       setLoading(false);
     }
   }
@@ -140,9 +174,9 @@ export default function EditKidScreen({ childId }: { childId: string }) {
     <main className="min-h-dvh bg-white">
       <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
         <div className="relative flex h-11 items-center justify-between">
-          <Link href="/crew" aria-label="Back" className={circle}>
+          <BackButton fallback={returnTo} aria-label="Back" className={circle}>
             <ChevronLeftIcon className="size-6 text-black" />
-          </Link>
+          </BackButton>
           <Link
             href="/account"
             aria-label="Account"
@@ -156,7 +190,10 @@ export default function EditKidScreen({ childId }: { childId: string }) {
 
         <motion.div
           initial={false}
-          animate={{ paddingTop: focused ? 0 : 24, paddingBottom: focused ? 36 : 32 }}
+          animate={{
+            paddingTop: focused ? 0 : 24,
+            paddingBottom: focused ? 36 : 32,
+          }}
           transition={ease}
         >
           <motion.div
@@ -197,7 +234,14 @@ export default function EditKidScreen({ childId }: { childId: string }) {
         </motion.div>
       </div>
 
-      {error && <p role="alert" className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && (
+        <p
+          role="alert"
+          className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-col gap-6 pb-[140px]">
         {/* Picture with the pencil badge opens the avatar sheet */}
@@ -240,7 +284,9 @@ export default function EditKidScreen({ childId }: { childId: string }) {
                 </label>
                 <div
                   className={`flex h-14 w-full items-center rounded-lg border-[3px] p-2 ${
-                    isFocused ? "border-black bg-white" : "border-transparent bg-[#f3f3f3]"
+                    isFocused
+                      ? "border-black bg-white"
+                      : "border-transparent bg-[#f3f3f3]"
                   }`}
                 >
                   <input
@@ -312,7 +358,9 @@ export default function EditKidScreen({ childId }: { childId: string }) {
           <button
             type="button"
             onClick={() => void save()}
-            disabled={loading || !loaded || !first.trim() || !last.trim() || !dob}
+            disabled={
+              loading || !loaded || !first.trim() || !last.trim() || !dob
+            }
             className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
           >
             Save changes

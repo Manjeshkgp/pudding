@@ -1,3 +1,6 @@
+import { olderThan, pageCursor, pageSize, takePage } from "@/lib/list-page";
+import { deliverCoParentInvite } from "@/services/coparent-invite.service";
+import { inviteExpiresAt, pendingInviteView } from "@/lib/coparent-invite";
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -16,22 +19,29 @@ import {
 } from "@/lib/auth-guard";
 import { generateSecureToken } from "@/lib/codes";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { coParentNameFields, validateNameParts } from "@/lib/coparent-name";
 
-const inviteCoParentSchema = z.object({
-  name: z.string().trim().min(2, "Name is required").max(100),
-  email: z.string().trim().email("Valid email address is required").toLowerCase(),
-  permissionLevel: z.enum(["EQUAL", "LIMITED"]).default("EQUAL"),
-  permissions: z
-    .object({
-      canManageBudget: z.boolean().optional(),
-      canManageAllowances: z.boolean().optional(),
-      canApproveChores: z.boolean().optional(),
-      canApproveSpending: z.boolean().optional(),
-      canManageChildren: z.boolean().optional(),
-      canManageSpendingRules: z.boolean().optional(),
-    })
-    .optional(),
-});
+const inviteCoParentSchema = z
+  .object({
+    ...coParentNameFields,
+    email: z
+      .string()
+      .trim()
+      .email("Valid email address is required")
+      .toLowerCase(),
+    permissionLevel: z.enum(["EQUAL", "LIMITED"]).default("EQUAL"),
+    permissions: z
+      .object({
+        canManageBudget: z.boolean().optional(),
+        canManageAllowances: z.boolean().optional(),
+        canApproveChores: z.boolean().optional(),
+        canApproveSpending: z.boolean().optional(),
+        canManageChildren: z.boolean().optional(),
+        canManageSpendingRules: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .superRefine(validateNameParts);
 
 const updateCoParentSchema = z.object({
   coParentUserId: z.string().trim().min(1),
@@ -54,8 +64,28 @@ const updateCoParentSchema = z.object({
  */
 export async function GET(req: NextRequest) {
   try {
-    const { family } = await requireParent(req);
+    const { family, user: viewer } = await requireParent(req);
 
+    const view = req.nextUrl.searchParams.get("view");
+    const now = new Date();
+    if (view === "invites") {
+      if (viewer.role !== "PRIMARY_PARENT")
+        return apiSuccess({ items: [], nextCursor: null });
+      const rows = await prisma.coParentInvite.findMany({
+        where: {
+          familyId: family.id,
+          status: { in: ["PENDING", "EXPIRED"] },
+          ...olderThan("createdAt", pageCursor(req.nextUrl.searchParams)),
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: pageSize + 1,
+      });
+      const page = takePage(rows, "createdAt");
+      return apiSuccess({
+        ...page,
+        items: page.items.map((invite) => pendingInviteView(invite, now)),
+      });
+    }
     const [parents, invites] = await Promise.all([
       prisma.user.findMany({
         where: { familyId: family.id },
@@ -75,15 +105,20 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.coParentInvite.findMany({
-        where: { familyId: family.id },
-        orderBy: { createdAt: "desc" },
-      }),
+      view === "parents" || viewer.role !== "PRIMARY_PARENT"
+        ? Promise.resolve([])
+        : prisma.coParentInvite.findMany({
+            where: {
+              familyId: family.id,
+              status: { in: ["PENDING", "EXPIRED"] },
+            },
+            orderBy: { createdAt: "desc" },
+          }),
     ]);
 
     return apiSuccess({
       parents,
-      invites,
+      invites: invites.map((invite) => pendingInviteView(invite, now)),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -99,6 +134,12 @@ export async function POST(req: NextRequest) {
     const { user, family } = await requirePrimaryParent(req);
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, inviteCoParentSchema);
+    const name =
+      input.firstName && input.lastName
+        ? `${input.firstName} ${input.lastName}`
+        : input.name;
+    if (!name)
+      throw new ApiError(400, "Enter the co-parent’s first and last name.");
 
     if (input.email === user.email) {
       throw new ApiError(400, "You cannot invite yourself as a co-parent");
@@ -114,27 +155,15 @@ export async function POST(req: NextRequest) {
         throw new ApiError(
           409,
           "This person is already a guardian in your family",
-          "ALREADY_IN_FAMILY"
+          "ALREADY_IN_FAMILY",
         );
       }
       throw new ApiError(
         409,
         "This email is already registered to another account",
-        "EMAIL_ALREADY_REGISTERED"
+        "EMAIL_ALREADY_REGISTERED",
       );
     }
-
-    // Expire any previous pending invites for the same email in this family
-    await prisma.coParentInvite.updateMany({
-      where: {
-        familyId: family.id,
-        email: input.email,
-        status: "PENDING",
-      },
-      data: {
-        status: "REVOKED",
-      },
-    });
 
     const resolvedPermissions =
       input.permissionLevel === "EQUAL"
@@ -145,20 +174,33 @@ export async function POST(req: NextRequest) {
           };
 
     const inviteToken = generateSecureToken(24);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-
-    const invite = await prisma.coParentInvite.create({
-      data: {
-        familyId: family.id,
-        invitedByUserId: user.id,
-        email: input.email,
-        name: input.name,
-        permissionLevel: input.permissionLevel,
-        permissions: resolvedPermissions as Prisma.InputJsonValue,
-        inviteToken,
-        status: "PENDING",
-        expiresAt,
-      },
+    const invite = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${family.id} FOR UPDATE`;
+      await tx.coParentInvite.updateMany({
+        where: {
+          familyId: family.id,
+          email: input.email,
+          status: { in: ["PENDING", "EXPIRED"] },
+        },
+        data: { status: "REVOKED" },
+      });
+      const createdAt = new Date();
+      return tx.coParentInvite.create({
+        data: {
+          familyId: family.id,
+          invitedByUserId: user.id,
+          email: input.email,
+          name,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          permissionLevel: input.permissionLevel,
+          permissions: resolvedPermissions as Prisma.InputJsonValue,
+          inviteToken,
+          status: "PENDING",
+          createdAt,
+          expiresAt: inviteExpiresAt(createdAt),
+        },
+      });
     });
 
     await writeAuditLog({
@@ -177,24 +219,10 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
     return apiSuccess(
-      {
-        invite: {
-          id: invite.id,
-          email: invite.email,
-          name: invite.name,
-          permissionLevel: invite.permissionLevel,
-          permissions: invite.permissions,
-          inviteToken: invite.inviteToken,
-          inviteAcceptUrl: `${appUrl}/accept-invite?token=${invite.inviteToken}`,
-          status: invite.status,
-          expiresAt: invite.expiresAt,
-        },
-      },
+      await deliverCoParentInvite(invite),
       201,
-      "Co-parent invitation created"
+      "Co-parent invitation created",
     );
   } catch (error) {
     return handleRouteError(error);
@@ -223,7 +251,7 @@ export async function PATCH(req: NextRequest) {
       throw new ApiError(
         404,
         "Co-parent not found in your family",
-        "COPARENT_NOT_FOUND"
+        "COPARENT_NOT_FOUND",
       );
     }
 
@@ -293,10 +321,15 @@ export async function DELETE(req: NextRequest) {
         throw new ApiError(404, "Invite not found", "INVITE_NOT_FOUND");
       }
 
-      await prisma.coParentInvite.update({
-        where: { id: invite.id },
+      const revoked = await prisma.coParentInvite.updateMany({
+        where: { id: invite.id, status: { in: ["PENDING", "EXPIRED"] } },
         data: { status: "REVOKED" },
       });
+      if (!revoked.count)
+        throw new ApiError(
+          409,
+          "This invitation has already been accepted or removed.",
+        );
 
       await writeAuditLog({
         familyId: family.id,
@@ -312,7 +345,7 @@ export async function DELETE(req: NextRequest) {
       return apiSuccess(
         { revokedInviteId: invite.id },
         200,
-        "Co-parent invitation revoked"
+        "Co-parent invitation revoked",
       );
     }
 
@@ -348,13 +381,13 @@ export async function DELETE(req: NextRequest) {
       return apiSuccess(
         { removedCoParentId: coParent.id },
         200,
-        "Co-parent removed from family"
+        "Co-parent removed from family",
       );
     }
 
     throw new ApiError(
       400,
-      "Provide either inviteId or coParentUserId query parameter"
+      "Provide either inviteId or coParentUserId query parameter",
     );
   } catch (error) {
     return handleRouteError(error);

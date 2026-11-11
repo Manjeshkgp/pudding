@@ -1,13 +1,25 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import { ApiError, apiSuccess, handleRouteError, validateBody } from "@/lib/api-response";
+import {
+  ApiError,
+  apiSuccess,
+  handleRouteError,
+  validateBody,
+} from "@/lib/api-response";
 import { requireAuth, requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
 const updateParentProfileSchema = z.object({
   name: z.string().trim().min(2).max(100),
-  avatar: z.enum(["avatar-1", "avatar-2", "avatar-3", "avatar-4", "avatar-5", "avatar-6"]),
+  avatar: z.enum([
+    "avatar-1",
+    "avatar-2",
+    "avatar-3",
+    "avatar-4",
+    "avatar-5",
+    "avatar-6",
+  ]),
 });
 
 export async function GET(req: NextRequest) {
@@ -28,6 +40,8 @@ export async function GET(req: NextRequest) {
                   avatar: true,
                   theme: true,
                   isFrozen: true,
+                  username: true,
+                  pinHash: true,
                   streakCount: true,
                   level: true,
                   xp: true,
@@ -64,6 +78,7 @@ export async function GET(req: NextRequest) {
           paypalLinkedAt: user.paypalLinkedAt,
           paypalVaultConnected: Boolean(user.paypalVaultId),
           mfaEnabled: user.mfaEnabled,
+          pinSet: Boolean(user.pinHash),
           notificationPreference: user.notificationPreference,
         },
         family: user.family
@@ -80,18 +95,26 @@ export async function GET(req: NextRequest) {
               siblingLeaderboardEnabled: user.family.siblingLeaderboardEnabled,
               isFrozen: user.family.isFrozen,
               children: user.family.children.map((child) => ({
-                ...child,
+                id: child.id,
+                name: child.name,
+                age: child.age,
+                avatar: child.avatar,
+                username: child.username,
+                pinSet: Boolean(child.pinHash),
+                isFrozen: child.isFrozen,
                 wallet: child.wallet
                   ? {
                       id: child.wallet.id,
                       spendBalance: child.wallet.spendBalance.toString(),
                       saveBalance: child.wallet.saveBalance.toString(),
-                      giveBalance: child.wallet.giveBalance.toString(),
+                      purchaseReservedBalance:
+                        child.wallet.purchaseReservedBalance.toString(),
+
                       lockedPendingBalance:
                         child.wallet.lockedPendingBalance.toString(),
                       defaultSplitSpend: child.wallet.defaultSplitSpend,
                       defaultSplitSave: child.wallet.defaultSplitSave,
-                      defaultSplitGive: child.wallet.defaultSplitGive,
+
                       isFrozen: child.wallet.isFrozen,
                     }
                   : null,
@@ -144,11 +167,14 @@ export async function GET(req: NextRequest) {
               id: child.wallet.id,
               spendBalance: child.wallet.spendBalance.toString(),
               saveBalance: child.wallet.saveBalance.toString(),
-              giveBalance: child.wallet.giveBalance.toString(),
-              lockedPendingBalance: child.wallet.lockedPendingBalance.toString(),
+              purchaseReservedBalance:
+                child.wallet.purchaseReservedBalance.toString(),
+
+              lockedPendingBalance:
+                child.wallet.lockedPendingBalance.toString(),
               defaultSplitSpend: child.wallet.defaultSplitSpend,
               defaultSplitSave: child.wallet.defaultSplitSave,
-              defaultSplitGive: child.wallet.defaultSplitGive,
+
               isFrozen: child.wallet.isFrozen,
             }
           : null,

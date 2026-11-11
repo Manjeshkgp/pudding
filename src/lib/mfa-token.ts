@@ -1,3 +1,4 @@
+import { getJwtSecretKey } from "@/lib/auth-secret";
 import { SignJWT, jwtVerify } from "jose";
 
 export interface StepUpMfaPayload {
@@ -7,18 +8,12 @@ export interface StepUpMfaPayload {
   actionScope: string;
 }
 
-function getJwtSecretKey(): Uint8Array {
-  const secret =
-    process.env.JWT_SECRET || "goodspend-default-dev-secret-key-32-chars-min";
-  return new TextEncoder().encode(secret);
-}
-
 /**
  * Signs a short-lived (15 minute) step-up MFA token (`NFR-2`) after a Parent
  * completes an MFA challenge via Email OTP, SMS OTP, or Security Question.
  */
 export async function signStepUpMfaToken(
-  payload: StepUpMfaPayload
+  payload: StepUpMfaPayload,
 ): Promise<string> {
   return new SignJWT({ ...payload, tokenType: "STEP_UP_MFA" })
     .setProtectedHeader({ alg: "HS256" })
@@ -29,10 +24,12 @@ export async function signStepUpMfaToken(
 }
 
 export async function verifyStepUpMfaToken(
-  token: string
+  token: string,
 ): Promise<StepUpMfaPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getJwtSecretKey());
+    const { payload } = await jwtVerify(token, getJwtSecretKey(), {
+      algorithms: ["HS256"],
+    });
     if (payload.tokenType !== "STEP_UP_MFA" || !payload.sub) {
       return null;
     }

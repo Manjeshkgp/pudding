@@ -1,7 +1,9 @@
+import { refreshSessionNavigation } from "@/lib/refresh-navigation";
+import { getJwtSecretKey } from "@/lib/auth-secret";
 import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { z } from "zod";
-import prisma from "@/lib/prisma";
+import { linkPayPalIdentity } from "@/lib/paypal-link";
 import {
   ApiError,
   apiSuccess,
@@ -12,9 +14,7 @@ import { requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
 function getStateSecret(): Uint8Array {
-  return new TextEncoder().encode(
-    process.env.JWT_SECRET || "goodspend-default-dev-secret-key-32-chars-min"
-  );
+  return getJwtSecretKey();
 }
 
 /**
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         500,
         "PAYPAL_CLIENT_ID is not configured on the server",
-        "PAYPAL_CONFIG_MISSING"
+        "PAYPAL_CONFIG_MISSING",
       );
     }
 
@@ -45,7 +45,10 @@ export async function GET(req: NextRequest) {
       userId: user.id,
       familyId: family.id,
       purpose: "PAYPAL_OAUTH_STATE",
-      returnTo: req.nextUrl.searchParams.get("returnTo") === "paypal" ? "paypal" : "settings",
+      returnTo:
+        req.nextUrl.searchParams.get("returnTo") === "paypal"
+          ? "paypal"
+          : "settings",
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
@@ -86,7 +89,11 @@ export async function GET(req: NextRequest) {
 }
 
 const sandboxSimulateSchema = z.object({
-  paypalEmail: z.string().trim().email("Valid PayPal email required").toLowerCase(),
+  paypalEmail: z
+    .string()
+    .trim()
+    .email("Valid PayPal email required")
+    .toLowerCase(),
   paypalPayerId: z.string().trim().min(5).max(64).optional(),
   verifiedAccount: z.boolean().default(true),
 });
@@ -101,11 +108,14 @@ export async function POST(req: NextRequest) {
     const { user, family } = await requireParent(req);
     const { ipAddress, userAgent } = getRequestMeta(req);
 
-    if (process.env.PAYPAL_ENV === "live" && process.env.NODE_ENV === "production") {
+    if (
+      process.env.PAYPAL_ENV === "live" &&
+      process.env.NODE_ENV === "production"
+    ) {
       throw new ApiError(
         403,
         "Simulated PayPal linking is only permitted in Sandbox mode",
-        "SANDBOX_ONLY"
+        "SANDBOX_ONLY",
       );
     }
 
@@ -114,31 +124,11 @@ export async function POST(req: NextRequest) {
       input.paypalPayerId ||
       `SBX_${user.id.slice(-8).toUpperCase()}_${Date.now().toString(36).toUpperCase()}`;
 
-    const existingOwner = await prisma.user.findFirst({
-      where: {
-        paypalPayerId: payerId,
-        NOT: { id: user.id },
-      },
-      select: { id: true },
-    });
-
-    if (existingOwner) {
-      throw new ApiError(
-        409,
-        "This PayPal account is already linked to another user",
-        "PAYPAL_ALREADY_LINKED"
-      );
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        paypalPayerId: payerId,
-        paypalVerifiedEmail: input.paypalEmail,
-        paypalIsVerified: input.verifiedAccount,
-        isKycSimulatedVerified: input.verifiedAccount,
-        paypalLinkedAt: new Date(),
-      },
+    const updatedUser = await linkPayPalIdentity(user.id, payerId, {
+      paypalVerifiedEmail: input.paypalEmail,
+      paypalIsVerified: input.verifiedAccount,
+      isKycSimulatedVerified: input.verifiedAccount,
+      paypalLinkedAt: new Date(),
     });
 
     await writeAuditLog({
@@ -157,7 +147,7 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    return apiSuccess(
+    const response = apiSuccess(
       {
         paypalPayerId: updatedUser.paypalPayerId,
         paypalVerifiedEmail: updatedUser.paypalVerifiedEmail,
@@ -166,8 +156,10 @@ export async function POST(req: NextRequest) {
         paypalLinkedAt: updatedUser.paypalLinkedAt,
       },
       200,
-      "PayPal account linked and verified successfully"
+      "PayPal account linked and verified successfully",
     );
+    await refreshSessionNavigation(req, response);
+    return response;
   } catch (error) {
     return handleRouteError(error);
   }

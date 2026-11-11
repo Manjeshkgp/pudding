@@ -1,3 +1,4 @@
+import { chorePeriod } from "@/lib/chore-period";
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
@@ -11,7 +12,7 @@ import { ensureLessonsAndBadgesSeeded } from "@/services/education.service";
  * Strictly scoped to the authenticated child (never exposes parent financial details or family budget).
  * Returns:
  * - Age band UI mode (`YOUNG_6_9`, `TWEEN_10_13`, `TEEN_14_17`)
- * - Wallet Spend/Save/Give balances
+ * - Wallet Spend and Save balances
  * - Assigned active chores & pending submissions
  * - Active savings goals with projections
  * - Recent spending requests & upcoming allowance
@@ -74,56 +75,61 @@ export async function GET(req: NextRequest) {
           ? "TWEEN_10_13"
           : "TEEN_14_17";
 
-    const [assignedChores, recentActivity, unreadNotifications, siblingLeaderboard] =
-      await Promise.all([
-        prisma.chore.findMany({
-          where: {
-            familyId: child.familyId,
-            isTemplate: false,
-            isActive: true,
-            assigneeIds: { has: child.id },
+    const [
+      assignedChores,
+      recentActivity,
+      unreadNotifications,
+      siblingLeaderboard,
+    ] = await Promise.all([
+      prisma.chore.findMany({
+        where: {
+          familyId: child.familyId,
+          isTemplate: false,
+          isActive: true,
+          assigneeIds: { has: child.id },
+        },
+        include: {
+          submissions: {
+            where: { childId: child.id },
+            orderBy: { submittedAt: "desc" },
+            take: 3,
           },
-          include: {
-            submissions: {
-              where: { childId: child.id },
-              orderBy: { submittedAt: "desc" },
-              take: 3,
+        },
+        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+        take: 15,
+      }),
+      prisma.ledgerEntry.findMany({
+        where: {
+          childId: child.id,
+          walletBucket: { in: ["SPEND", "SAVE", "GIVE"] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 15,
+      }),
+      prisma.notification.findMany({
+        where: {
+          childId: child.id,
+          isRead: false,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      // Sibling leaderboard ONLY if enabled by parent (FR-11.4)
+      child.family.siblingLeaderboardEnabled
+        ? prisma.child.findMany({
+            where: { familyId: child.familyId },
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+              streakCount: true,
+              level: true,
+              xp: true,
             },
-          },
-          orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-        }),
-        prisma.ledgerEntry.findMany({
-          where: {
-            childId: child.id,
-            walletBucket: { in: ["SPEND", "SAVE", "GIVE"] },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 15,
-        }),
-        prisma.notification.findMany({
-          where: {
-            childId: child.id,
-            isRead: false,
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        }),
-        // Sibling leaderboard ONLY if enabled by parent (FR-11.4)
-        child.family.siblingLeaderboardEnabled
-          ? prisma.child.findMany({
-              where: { familyId: child.familyId },
-              select: {
-                id: true,
-                name: true,
-                avatar: true,
-                streakCount: true,
-                level: true,
-                xp: true,
-              },
-              orderBy: [{ xp: "desc" }, { streakCount: "desc" }],
-            })
-          : Promise.resolve(null),
-      ]);
+            orderBy: [{ xp: "desc" }, { streakCount: "desc" }],
+          })
+        : Promise.resolve(null),
+    ]);
 
     const goalsWithProjection = await Promise.all(
       child.savingsGoals.map(async (g) => ({
@@ -138,7 +144,7 @@ export async function GET(req: NextRequest) {
         interestRateApr: g.interestRateApr.toString(),
         status: g.status,
         projection: await computeGoalProjection(g),
-      }))
+      })),
     );
 
     return apiSuccess({
@@ -159,12 +165,13 @@ export async function GET(req: NextRequest) {
         ? {
             spendBalance: child.wallet.spendBalance.toString(),
             saveBalance: child.wallet.saveBalance.toString(),
-            giveBalance: child.wallet.giveBalance.toString(),
-            lockedPendingBalance:
-              child.wallet.lockedPendingBalance.toString(),
+            purchaseReservedBalance:
+              child.wallet.purchaseReservedBalance.toString(),
+
+            lockedPendingBalance: child.wallet.lockedPendingBalance.toString(),
             defaultSplitSpend: child.wallet.defaultSplitSpend,
             defaultSplitSave: child.wallet.defaultSplitSave,
-            defaultSplitGive: child.wallet.defaultSplitGive,
+
             isFrozen: child.wallet.isFrozen,
           }
         : null,
@@ -180,9 +187,16 @@ export async function GET(req: NextRequest) {
         title: c.title,
         description: c.description,
         rewardAmount: c.rewardAmount.toString(),
-        dueDate: c.dueDate,
+        dueDate: chorePeriod(c.recurrence, c.createdAt)?.end ?? null,
         recurrence: c.recurrence,
-        latestSubmission: c.submissions[0] ?? null,
+        latestSubmission:
+          c.submissions.find((s) => {
+            const period = chorePeriod(c.recurrence, c.createdAt);
+            return (
+              !period ||
+              (s.submittedAt >= period.start && s.submittedAt < period.end)
+            );
+          }) ?? null,
       })),
       savingsGoals: goalsWithProjection,
       spendingRequests: child.spendingRequests.map((r) => ({

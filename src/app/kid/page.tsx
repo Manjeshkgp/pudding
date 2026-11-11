@@ -1,8 +1,9 @@
+import { requirePage } from "@/lib/page-auth";
 import LoginScreen from "@/components/login-screen";
 
-// Kid login. Sample only: nothing is checked, any username and an
-// 8+ character password signs in.
-export default function Page() {
+// Child authentication uses username and a parent-created six-digit PIN.
+export default async function Page() {
+  await requirePage("/kid");
   return (
     <LoginScreen
       copy={{
@@ -14,7 +15,6 @@ export default function Page() {
         emailPlaceholder: "Enter your username",
         emailLabel: "Username",
         plainEmail: true,
-        sampleError: true,
         forgotHref: "/kid/forgot",
       }}
     />

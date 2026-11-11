@@ -1,5 +1,7 @@
+import { requirePage } from "@/lib/page-auth";
 import AccountScreen from "@/components/account-screen";
 
-export default function Page() {
+export default async function Page() {
+  await requirePage("/account");
   return <AccountScreen />;
 }

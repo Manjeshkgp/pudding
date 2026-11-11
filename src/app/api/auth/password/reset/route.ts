@@ -1,12 +1,9 @@
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import {
-  ApiError,
-  apiSuccess,
-  handleRouteError,
-} from "@/lib/api-response";
+import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { verifyOtpCode } from "@/services/verification.service";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
@@ -27,7 +24,7 @@ const passwordResetSchema = z
     {
       message:
         "Provide either a 6-digit otpCode or a securityQuestionKey + securityQuestionAnswer.",
-    }
+    },
   );
 
 /**
@@ -42,6 +39,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const parsed = passwordResetSchema.parse(body);
 
+    enforceRateLimit({
+      key: `password-reset:${ipAddress}`,
+      limit: 10,
+      windowMs: 900000,
+    });
     const normalizedEmail = parsed.email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         404,
         "No parent account found with that email address.",
-        "USER_NOT_FOUND"
+        "USER_NOT_FOUND",
       );
     }
 
@@ -71,20 +73,20 @@ export async function POST(req: NextRequest) {
         throw new ApiError(
           400,
           otpCheck.reason || "Invalid or expired password reset OTP.",
-          "INVALID_OTP"
+          "INVALID_OTP",
         );
       }
       verifiedBy = "OTP";
     } else if (parsed.securityQuestionKey && parsed.securityQuestionAnswer) {
       const matchingQuestion = user.securityQuestions.find(
-        (q) => q.questionKey === parsed.securityQuestionKey
+        (q) => q.questionKey === parsed.securityQuestionKey,
       );
 
       if (!matchingQuestion) {
         throw new ApiError(
           400,
           "That security question is not configured for this account.",
-          "SECURITY_QUESTION_NOT_FOUND"
+          "SECURITY_QUESTION_NOT_FOUND",
         );
       }
 
@@ -93,14 +95,14 @@ export async function POST(req: NextRequest) {
         .toLowerCase();
       const isAnswerMatch = await bcrypt.compare(
         normalizedAnswer,
-        matchingQuestion.answerHash
+        matchingQuestion.answerHash,
       );
 
       if (!isAnswerMatch) {
         throw new ApiError(
           401,
           "Incorrect security question answer.",
-          "INVALID_SECURITY_ANSWER"
+          "INVALID_SECURITY_ANSWER",
         );
       }
       verifiedBy = "SECURITY_QUESTION";

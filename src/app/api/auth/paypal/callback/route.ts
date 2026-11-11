@@ -1,14 +1,14 @@
+import { refreshSessionNavigation } from "@/lib/refresh-navigation";
+import { getJwtSecretKey } from "@/lib/auth-secret";
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import prisma from "@/lib/prisma";
+import { linkPayPalIdentity } from "@/lib/paypal-link";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 
 function getStateSecret(): Uint8Array {
-  return new TextEncoder().encode(
-    process.env.JWT_SECRET || "goodspend-default-dev-secret-key-32-chars-min"
-  );
+  return getJwtSecretKey();
 }
 
 interface PayPalUserInfoResponse {
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         400,
         `PayPal OAuth authorization denied: ${errorParam}`,
-        "PAYPAL_OAUTH_DENIED"
+        "PAYPAL_OAUTH_DENIED",
       );
     }
 
@@ -53,13 +53,20 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         400,
         "Missing authorization code or state parameter",
-        "INVALID_OAUTH_CALLBACK"
+        "INVALID_OAUTH_CALLBACK",
       );
     }
 
-    let statePayload: { userId: string; familyId: string; purpose: string; returnTo?: string };
+    let statePayload: {
+      userId: string;
+      familyId: string;
+      purpose: string;
+      returnTo?: string;
+    };
     try {
-      const verified = await jwtVerify(state, getStateSecret());
+      const verified = await jwtVerify(state, getStateSecret(), {
+        algorithms: ["HS256"],
+      });
       statePayload = verified.payload as unknown as {
         userId: string;
         familyId: string;
@@ -70,12 +77,16 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         400,
         "Invalid or expired OAuth state token",
-        "INVALID_OAUTH_STATE"
+        "INVALID_OAUTH_STATE",
       );
     }
 
     if (statePayload.purpose !== "PAYPAL_OAUTH_STATE" || !statePayload.userId) {
-      throw new ApiError(400, "Invalid OAuth state purpose", "INVALID_OAUTH_STATE");
+      throw new ApiError(
+        400,
+        "Invalid OAuth state purpose",
+        "INVALID_OAUTH_STATE",
+      );
     }
 
     const clientId = process.env.PAYPAL_CLIENT_ID;
@@ -90,13 +101,13 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         500,
         "PayPal credentials are not configured",
-        "PAYPAL_CONFIG_MISSING"
+        "PAYPAL_CONFIG_MISSING",
       );
     }
 
     // 1. Exchange authorization code for access_token
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
-      "base64"
+      "base64",
     );
     const tokenRes = await fetch(`${apiBaseUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -127,7 +138,7 @@ export async function GET(req: NextRequest) {
         {
           httpStatus: tokenRes.status,
           paypalDebugId: tokenRes.headers.get("paypal-debug-id"),
-        }
+        },
       );
     }
 
@@ -142,7 +153,7 @@ export async function GET(req: NextRequest) {
         502,
         "PayPal did not return a refresh token for the identity flow",
         "PAYPAL_REFRESH_TOKEN_MISSING",
-        { grantedScopes: tokenData.scope }
+        { grantedScopes: tokenData.scope },
       );
     }
 
@@ -177,7 +188,7 @@ export async function GET(req: NextRequest) {
           status: refreshRes.status,
           statusText: refreshRes.statusText,
           paypalDebugId: refreshRes.headers.get("paypal-debug-id"),
-        }
+        },
       );
     }
 
@@ -196,7 +207,7 @@ export async function GET(req: NextRequest) {
           Authorization: `Bearer ${refreshedToken.access_token}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     if (!userInfoRes.ok) {
@@ -231,7 +242,7 @@ export async function GET(req: NextRequest) {
           paypalDebugId: userInfoRes.headers.get("paypal-debug-id"),
           grantedScopes: refreshedToken.scope || tokenData.scope,
           paypalError,
-        }
+        },
       );
     }
 
@@ -244,7 +255,7 @@ export async function GET(req: NextRequest) {
     const rawPayerId =
       profile.payer_id ||
       profile.account_id ||
-      ((profile.user_id || profile.sub)
+      (profile.user_id || profile.sub
         ? (profile.user_id || profile.sub)!.split("/").pop()
         : undefined);
 
@@ -252,7 +263,7 @@ export async function GET(req: NextRequest) {
       throw new ApiError(
         400,
         "PayPal profile did not return a valid payer ID or email address",
-        "PAYPAL_PROFILE_INCOMPLETE"
+        "PAYPAL_PROFILE_INCOMPLETE",
       );
     }
 
@@ -262,33 +273,16 @@ export async function GET(req: NextRequest) {
       profile.verified === true ||
       profile.verified === "true";
 
-    // Check if another user already linked this PayPal account
-    const conflictingUser = await prisma.user.findFirst({
-      where: {
-        paypalPayerId: rawPayerId,
-        NOT: { id: statePayload.userId },
-      },
-      select: { id: true },
-    });
-
-    if (conflictingUser) {
-      throw new ApiError(
-        409,
-        "This PayPal account is already linked to another GoodSpend user",
-        "PAYPAL_ALREADY_LINKED"
-      );
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: statePayload.userId },
-      data: {
-        paypalPayerId: rawPayerId,
+    const updatedUser = await linkPayPalIdentity(
+      statePayload.userId,
+      rawPayerId,
+      {
         paypalVerifiedEmail: verifiedEmail.toLowerCase(),
         paypalIsVerified: isVerified,
         isKycSimulatedVerified: isVerified,
         paypalLinkedAt: new Date(),
       },
-    });
+    );
 
     await writeAuditLog({
       familyId: statePayload.familyId,
@@ -307,12 +301,10 @@ export async function GET(req: NextRequest) {
     });
 
     const format = req.nextUrl.searchParams.get("format");
-    const acceptsJson = req.headers
-      .get("accept")
-      ?.includes("application/json");
+    const acceptsJson = req.headers.get("accept")?.includes("application/json");
 
     if (format === "json" || acceptsJson) {
-      return apiSuccess(
+      const response = apiSuccess(
         {
           paypalPayerId: updatedUser.paypalPayerId,
           paypalVerifiedEmail: updatedUser.paypalVerifiedEmail,
@@ -320,17 +312,20 @@ export async function GET(req: NextRequest) {
           paypalLinkedAt: updatedUser.paypalLinkedAt,
         },
         200,
-        "PayPal account connected successfully"
+        "PayPal account connected successfully",
       );
+      await refreshSessionNavigation(req, response);
+      return response;
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const returnPath = statePayload.returnTo === "paypal"
-      ? "/paypal?paypal_oauth=connected"
-      : "/parent/settings?paypal_linked=true";
-    return NextResponse.redirect(
-      `${appUrl}${returnPath}`
-    );
+    const returnPath =
+      statePayload.returnTo === "paypal"
+        ? "/paypal?paypal_oauth=connected"
+        : "/account/paypal?paypal_oauth=connected";
+    const response = NextResponse.redirect(`${appUrl}${returnPath}`);
+    await refreshSessionNavigation(req, response);
+    return response;
   } catch (error) {
     return handleRouteError(error);
   }

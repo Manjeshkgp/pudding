@@ -51,11 +51,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!child) {
-      throw new ApiError(
-        401,
-        "Invalid username or PIN",
-        "INVALID_CREDENTIALS"
-      );
+      throw new ApiError(401, "Invalid username or PIN", "INVALID_CREDENTIALS");
     }
 
     const family = child.family;
@@ -64,7 +60,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         403,
         "Family account is currently paused.",
-        "FAMILY_FROZEN"
+        "FAMILY_FROZEN",
       );
     }
 
@@ -72,7 +68,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         403,
         "Your account is currently paused by your parent.",
-        "CHILD_FROZEN"
+        "CHILD_FROZEN",
       );
     }
 
@@ -80,20 +76,20 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         403,
         "Your parent needs to connect PayPal and create your PIN before you can log in.",
-        "CHILD_PIN_NOT_SET"
+        "CHILD_PIN_NOT_SET",
       );
     }
 
     const now = new Date();
     if (child.pinLockedUntil && child.pinLockedUntil > now) {
       const remainingSeconds = Math.ceil(
-        (child.pinLockedUntil.getTime() - now.getTime()) / 1000
+        (child.pinLockedUntil.getTime() - now.getTime()) / 1000,
       );
       throw new ApiError(
         423,
         "Too many wrong PIN attempts. Ask your parent to reset your PIN or wait 15 minutes.",
         "PIN_LOCKED",
-        { retryAfterSeconds: remainingSeconds }
+        { retryAfterSeconds: remainingSeconds },
       );
     }
 
@@ -144,7 +140,7 @@ export async function POST(req: NextRequest) {
           423,
           "Too many wrong PIN attempts. Your PIN is locked for 15 minutes.",
           "PIN_LOCKED",
-          { retryAfterSeconds: PIN_LOCKOUT_DURATION_MS / 1000 }
+          { retryAfterSeconds: PIN_LOCKOUT_DURATION_MS / 1000 },
         );
       }
 
@@ -200,12 +196,11 @@ export async function POST(req: NextRequest) {
                 id: child.wallet.id,
                 spendBalance: child.wallet.spendBalance.toString(),
                 saveBalance: child.wallet.saveBalance.toString(),
-                giveBalance: child.wallet.giveBalance.toString(),
+
                 lockedPendingBalance:
                   child.wallet.lockedPendingBalance.toString(),
                 defaultSplitSpend: child.wallet.defaultSplitSpend,
                 defaultSplitSave: child.wallet.defaultSplitSave,
-                defaultSplitGive: child.wallet.defaultSplitGive,
               }
             : null,
         },
@@ -216,7 +211,7 @@ export async function POST(req: NextRequest) {
         },
       },
       200,
-      `Welcome back, ${child.name}!`
+      `Welcome back, ${child.name}!`,
     );
 
     setSessionCookie(response, token, "CHILD");

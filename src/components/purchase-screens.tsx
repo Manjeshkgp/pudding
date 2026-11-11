@@ -1,0 +1,988 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ListEnd, usePagedList } from "@/components/paged-list";
+import { frequencyLabels, taskFrequencies } from "@/lib/chore-period";
+import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
+import {
+  AppScreen,
+  Card,
+  Button,
+  Status,
+  Empty,
+  ActionLink,
+  useRemote,
+  useAction,
+} from "@/components/app-ui";
+import { Me, Purchase, money, readable } from "@/lib/app-types";
+import {
+  ChoreEvidenceReview,
+  ChoreSubmissionView,
+} from "@/components/chore-proof-screen";
+import { postApi } from "@/lib/client-api";
+
+export function ScanScreen() {
+  const video = useRef<HTMLVideoElement>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const action = useAction();
+  const [cameraError, setCameraError] = useState("");
+  const [ready, setReady] = useState(false);
+  const [restart, setRestart] = useState(0);
+  const requestKey = useRef<string | null>(null);
+  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
+  useEffect(() => {
+    // Scan is usually near the bottom of the camera preview. Bring the newly
+    // rendered invoice into view without changing the route/history.
+    if (purchase) window.scrollTo({ top: 0, behavior: "auto" });
+  }, [purchase?.id]);
+  useEffect(() => {
+    if (purchase) return;
+    let active = true;
+    setReady(false);
+    setCameraError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        "Open Pudding on localhost or an HTTPS address to use your camera.",
+      );
+      return;
+    }
+    navigator.mediaDevices
+      .getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      })
+      .then((s) => {
+        if (!active) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream.current = s;
+        if (video.current) video.current.srcObject = s;
+      })
+      .catch(() => {
+        if (active)
+          setCameraError(
+            "Camera access is unavailable. Allow camera permission in your browser, then retry.",
+          );
+      });
+    return () => {
+      active = false;
+      stream.current?.getTracks().forEach((t) => t.stop());
+      stream.current = null;
+    };
+  }, [restart, purchase?.id]);
+  function scan() {
+    void action.run(async () => {
+      if (!ready || !video.current?.videoWidth)
+        throw new Error("Wait for the camera to be ready.");
+      // The live camera gates this demo scan. Items come from the server catalog;
+      // copying a full-resolution camera frame would add work without using it.
+      requestKey.current ||= crypto.randomUUID();
+      const result = await postApi<{ purchase: Purchase }>("/api/purchases", {
+        idempotencyKey: requestKey.current,
+      });
+      stream.current?.getTracks().forEach((t) => t.stop());
+      setReady(false);
+      setPurchase(result.purchase);
+    });
+  }
+  return (
+    <AppScreen
+      title="Scan your purchase"
+      back="/home"
+      role="CHILD"
+      color="#ffc091"
+    >
+      {!purchase ? (
+        <>
+          <p>
+            Point your camera at anything and tap Scan. This demo generates a
+            random invoice and QR for Gemini to review.
+          </p>
+          <Card className="overflow-hidden p-2">
+            <video
+              ref={video}
+              muted
+              autoPlay
+              playsInline
+              onLoadedData={() => setReady(true)}
+              className="aspect-[3/4] w-full rounded-[24px] bg-black object-cover"
+            />
+            <p className="px-3 pb-2 text-sm text-[#5e5e5e]">
+              Sandbox demo: each capture creates a new invoice from the sample
+              catalog.
+            </p>
+          </Card>
+          <Status error={cameraError || action.error} />
+          <Button busy={action.busy} disabled={!ready} onClick={scan}>
+            Scan purchase
+          </Button>
+          {cameraError && (
+            <Button secondary onClick={() => setRestart((v) => v + 1)}>
+              Retry camera
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          <PurchaseScreen
+            key={purchase.id}
+            id={purchase.id}
+            initialPurchase={purchase}
+            parent={false}
+            embedded
+            onBusyChange={setPurchaseBusy}
+          />
+          <Button
+            secondary
+            disabled={purchaseBusy}
+            onClick={() => {
+              requestKey.current = null;
+              setPurchase(null);
+              setRestart((v) => v + 1);
+            }}
+          >
+            Scan another purchase
+          </Button>
+        </>
+      )}
+    </AppScreen>
+  );
+}
+const titles: Record<string, string> = {
+  CREATED: "Your invoice",
+  REVIEWING: "Reviewing your purchase",
+  APPROVED: "Purchase approved",
+  WAITING_PARENT: "Waiting for your parent",
+  AI_BLOCKED: "Let’s pause this purchase",
+  DECLINED: "Purchase declined",
+  PROCESSING: "Confirming your payment",
+  PAID: "All paid!",
+  PAYMENT_FAILED: "Payment needs attention",
+};
+
+// Invoices are shared across roles. Keep the stored reason for the child and
+// adapt known guidance for parents, including invoices created earlier.
+const parentDecisionReasons: Record<string, string> = {
+  "Your parent needs to allocate more Spend allowance before this purchase can be paid.":
+    "This child needs more Spend allowance before payment can go through.",
+  "Your family spending limit is used up. Your parent needs to add a top-up.":
+    "The available family spending limit is too low for this purchase.",
+  "Your parent needs to review scanned purchases.":
+    "Scanned purchases are set to require parent approval.",
+  "Your parent reviews every purchase.":
+    "The daily limit is set to $0, so every purchase needs parent approval.",
+  "AI review is unavailable or its free-tier quota was reached. Your parent will review this purchase.":
+    "AI review is unavailable. Review this purchase manually.",
+  "Approved by your parent.": "A parent approved this purchase.",
+  "Your parent declined this purchase.": "A parent declined this purchase.",
+};
+
+function purchaseReason(reason: string | null, parent: boolean) {
+  return parent && reason && Object.hasOwn(parentDecisionReasons, reason)
+    ? parentDecisionReasons[reason]
+    : reason;
+}
+
+const missingReviewReason =
+  "This purchase was sent for manual review without a recorded reason.";
+type AllowanceConfirmation = { amount: string; currency: string };
+
+function AllowanceApprovalDialog({
+  quote,
+  reason,
+  busy,
+  error,
+  onApprove,
+  onDecline,
+  onClose,
+}: {
+  quote: AllowanceConfirmation;
+  reason: string;
+  busy: boolean;
+  error: string;
+  onApprove: () => void;
+  onDecline: () => void;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => element?.close();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby="allowance-approval-title"
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-[32px] bg-white p-6 text-black shadow-xl backdrop:bg-black/50"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <div className="flex flex-col gap-4">
+        <h2
+          id="allowance-approval-title"
+          className="font-display text-2xl font-bold"
+        >
+          Add Spend allowance and pay?
+        </h2>
+        <p className="text-sm text-[#5e5e5e]">{reason}</p>
+        <p>
+          This child is {money(quote.amount, quote.currency)} short. Approving
+          allocates that amount from your available family budget to their Spend
+          wallet, then attempts the PayPal Sandbox payment.
+        </p>
+        <p className="text-sm text-[#5e5e5e]">
+          Spending limits stay the same. The allocation stays in Spend if the
+          payment doesn’t complete.
+        </p>
+        <Status error={error} />
+        <Button busy={busy} onClick={onApprove}>
+          Approve, allocate & pay
+        </Button>
+        <Button secondary disabled={busy} onClick={onDecline}>
+          Decline purchase
+        </Button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onClose}
+          className="self-center px-4 py-2 underline"
+        >
+          Not now
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+function PurchaseErrorToast({
+  message,
+  embedded,
+}: {
+  message: string;
+  embedded: boolean;
+}) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setVisible(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div
+      className={`pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4 ${embedded ? "bottom-[calc(10rem+env(safe-area-inset-bottom))]" : "bottom-[max(24px,env(safe-area-inset-bottom))]"}`}
+    >
+      <div className="pointer-events-auto flex w-full max-w-[488px] items-start gap-3 rounded-2xl bg-black p-4 text-sm text-white shadow-lg">
+        <AlertCircleIcon className="size-6 shrink-0" />
+        <p role="alert" className="flex-1">
+          {message}
+        </p>
+        <button
+          type="button"
+          aria-label="Dismiss error"
+          onClick={() => setVisible(false)}
+          className="shrink-0 px-2 text-lg leading-none"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function PurchaseScreen({
+  id,
+  initialPurchase,
+  parent,
+  embedded = false,
+  onBusyChange,
+}: {
+  id: string;
+  initialPurchase?: Purchase;
+  parent: boolean;
+  embedded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+}) {
+  const [current, setCurrent] = useState<Purchase | null>(
+    initialPurchase || null,
+  );
+  const [phase, setPhase] = useState<"decision" | "payment" | null>(null);
+  const [allowanceConfirmation, setAllowanceConfirmation] =
+    useState<AllowanceConfirmation | null>(null);
+  const submitting = useRef(false);
+  const pending =
+    current &&
+    ["REVIEWING", "WAITING_PARENT", "PROCESSING"].includes(current.status);
+  const invoice = useRemote<{ purchase: Purchase }>(
+    `/api/purchases/${id}`,
+    pending ? 4000 : 0,
+    true,
+  );
+  const action = useAction();
+  useEffect(() => {
+    onBusyChange?.(action.busy);
+    return () => onBusyChange?.(false);
+  }, [action.busy, onBusyChange]);
+  const p = current;
+  const statusTitle =
+    p &&
+    (parent && p.status === "WAITING_PARENT"
+      ? "Needs parent approval"
+      : titles[p.status]);
+  useEffect(() => {
+    if (invoice.data?.purchase.id === id && !submitting.current)
+      setCurrent(invoice.data.purchase);
+  }, [invoice.data, id]);
+  // Invoice creation is read-only until the child explicitly taps Pay.
+  function pay() {
+    if (!p || submitting.current) return;
+    submitting.current = true;
+    void action.run(async () => {
+      try {
+        let next = p;
+        if (["CREATED", "REVIEWING"].includes(next.status)) {
+          setPhase("decision");
+          next = (
+            await postApi<{ purchase: Purchase }>(
+              `/api/purchases/${id}/decision`,
+              {},
+            )
+          ).purchase;
+          setCurrent(next);
+        }
+        if (
+          (next.status === "APPROVED" && next.aiDecision === "APPROVE") ||
+          (next.status === "PAYMENT_FAILED" && next.aiDecision === "APPROVE") ||
+          next.status === "PROCESSING"
+        ) {
+          setPhase("payment");
+          next = (
+            await postApi<{ purchase: Purchase }>(
+              `/api/purchases/${id}/pay`,
+              {},
+            )
+          ).purchase;
+          setCurrent(next);
+        }
+      } finally {
+        submitting.current = false;
+        setPhase(null);
+        invoice.reload();
+      }
+    });
+  }
+  function review(approve: boolean, confirmedAllowance?: string) {
+    void action.run(async () => {
+      const result = await postApi<
+        | { purchase: Purchase }
+        | { allowanceConfirmation: AllowanceConfirmation }
+      >(`/api/purchases/${id}/review`, {
+        action: approve ? "APPROVE" : "DECLINE",
+        confirmedAllowance,
+      });
+      if ("allowanceConfirmation" in result) {
+        setAllowanceConfirmation(result.allowanceConfirmation);
+        return;
+      }
+      setAllowanceConfirmation(null);
+      setCurrent(result.purchase);
+      invoice.reload();
+    });
+  }
+  const content = (
+    <>
+      <Status error={invoice.error} loading={!p && invoice.loading} />
+      {action.error && !action.busy && !allowanceConfirmation && (
+        <PurchaseErrorToast
+          key={action.error}
+          message={action.error}
+          embedded={embedded}
+        />
+      )}
+      {allowanceConfirmation && (
+        <AllowanceApprovalDialog
+          quote={allowanceConfirmation}
+          reason={
+            purchaseReason(p?.decisionReason ?? null, true) ||
+            missingReviewReason
+          }
+          busy={action.busy}
+          error={action.error}
+          onApprove={() => review(true, allowanceConfirmation.amount)}
+          onDecline={() => review(false)}
+          onClose={() => {
+            setAllowanceConfirmation(null);
+            action.setError("");
+          }}
+        />
+      )}
+      {p && (
+        <>
+          <Card>
+            <img
+              src={`/api/purchases/${p.id}/qr`}
+              alt="QR containing this demo invoice, items and prices"
+              className="mx-auto w-full max-w-[260px]"
+            />
+            <p className="text-center text-sm text-[#5e5e5e]">
+              Demo invoice QR · not a PayPal payment link
+            </p>
+            <div className="flex justify-between">
+              <div>
+                <h2 className="font-display text-2xl font-bold">INVOICE</h2>
+                <p className="mt-1 text-sm text-[#5e5e5e]">Pudding Sandbox</p>
+              </div>
+              <img
+                src="/images/playful/reciept-1.svg"
+                alt=""
+                className="size-12"
+              />
+            </div>
+            <p className="break-all text-xs text-[#5e5e5e]">#{p.id}</p>
+            <div className="flex justify-between text-sm">
+              <span>Bill to {p.child?.name || (parent ? "child" : "you")}</span>
+              <time>{new Date(p.createdAt).toLocaleDateString()}</time>
+            </div>
+            <div className="border-y border-[#e8e8e8] py-3">
+              <div className="mb-3 grid grid-cols-[1fr_32px_66px_70px] gap-1 text-xs text-[#5e5e5e]">
+                <span>Item</span>
+                <span>Qty</span>
+                <span>Price</span>
+                <span className="text-right">Amount</span>
+              </div>
+              {p.items.map((item, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[1fr_32px_66px_70px] gap-1 py-3 text-sm"
+                >
+                  <span>
+                    {item.name}
+                    <span className="block text-xs text-[#5e5e5e]">
+                      {item.category}
+                    </span>
+                  </span>
+                  <span>{item.quantity}</span>
+                  <span>{money(item.unitPrice, p.currency)}</span>
+                  <span className="text-right">
+                    {money(Number(item.unitPrice) * item.quantity, p.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-sm text-[#5e5e5e]">
+              <span>Subtotal</span>
+              <span>{money(p.amount, p.currency)}</span>
+            </div>
+            <div className="flex justify-between font-display text-2xl font-bold">
+              <span>Total</span>
+              <span>{money(p.amount, p.currency)}</span>
+            </div>
+          </Card>
+          <Card
+            className={
+              p.status === "AI_BLOCKED" || p.status === "PAYMENT_FAILED"
+                ? "bg-[#fff0ee]"
+                : "bg-[#f3f3f3]"
+            }
+          >
+            <p className="font-display text-xl font-bold">{statusTitle}</p>
+            {parent && p.status === "WAITING_PARENT" && (
+              <p className="text-sm font-semibold">
+                Why this needs your approval
+              </p>
+            )}
+            <p>
+              {purchaseReason(p.decisionReason, parent) ||
+                (p.status === "WAITING_PARENT"
+                  ? missingReviewReason
+                  : parent
+                    ? "Review the invoice items and total."
+                    : "Check your items and total, then tap Pay to review this purchase.")}
+            </p>
+            {action.busy && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex min-h-24 flex-col items-center justify-center gap-3 text-center"
+              >
+                <SpinnerIcon className="size-8 motion-reduce:animate-none" />
+                <p>
+                  {phase === "decision"
+                    ? "Checking your purchase…"
+                    : phase === "payment"
+                      ? "Confirming your payment…"
+                      : "Updating your purchase…"}
+                </p>
+              </div>
+            )}
+          </Card>
+          {parent &&
+            ["WAITING_PARENT", "APPROVED", "PAYMENT_FAILED"].includes(
+              p.status,
+            ) && (
+              <>
+                <p className="text-sm text-[#5e5e5e]">
+                  Approval charges the primary parent’s saved PayPal Sandbox
+                  wallet. A top-up only changes your internal limit.
+                </p>
+                <Button busy={action.busy} onClick={() => review(true)}>
+                  Approve & pay {money(p.amount)}
+                </Button>
+                <Button
+                  busy={action.busy}
+                  secondary
+                  onClick={() => review(false)}
+                >
+                  Decline
+                </Button>
+                <ActionLink href={`/allowances?childId=${p.childId}`}>
+                  Manage this child's allowance
+                </ActionLink>
+                <ActionLink href="/topup">Increase family limit</ActionLink>
+              </>
+            )}
+          {p.status === "PROCESSING" && (
+            <Button
+              busy={action.busy}
+              onClick={() =>
+                void action.run(async () => {
+                  await postApi(`/api/purchases/${id}/pay`, {});
+                  invoice.reload();
+                })
+              }
+            >
+              Check payment confirmation
+            </Button>
+          )}
+          {!parent &&
+            (p.status === "CREATED" ||
+              p.status === "REVIEWING" ||
+              (["APPROVED", "PAYMENT_FAILED"].includes(p.status) &&
+                p.aiDecision === "APPROVE")) && (
+              <Button busy={action.busy} onClick={pay}>
+                {p.status === "REVIEWING"
+                  ? "Check review status"
+                  : p.status === "PAYMENT_FAILED"
+                    ? "Retry payment"
+                    : `Pay ${money(p.amount, p.currency)}`}
+              </Button>
+            )}
+          {parent && p.status === "PAYMENT_FAILED" && (
+            <ActionLink href="/account/paypal">
+              Authorize your saved wallet again
+            </ActionLink>
+          )}
+          {p.status === "PAID" && (
+            <ActionLink href={parent ? "/activity" : "/money"}>
+              View your activity
+            </ActionLink>
+          )}
+        </>
+      )}
+    </>
+  );
+  return embedded ? (
+    content
+  ) : (
+    <AppScreen
+      title={statusTitle || "Your invoice"}
+      back={parent ? "/approvals" : "/home"}
+      color={p?.status === "PAID" ? "#a0e1e1" : "#fff"}
+    >
+      {content}
+    </AppScreen>
+  );
+}
+function FeedSwitcher({
+  options,
+}: {
+  options: { label: string; href: string; active: boolean }[];
+}) {
+  return (
+    <nav
+      aria-label="View"
+      className="grid grid-cols-2 gap-1 rounded-full bg-[#f3f3f3] p-1"
+    >
+      {options.map((option) => (
+        <Link
+          key={option.href}
+          href={option.href}
+          aria-current={option.active ? "page" : undefined}
+          replace
+          scroll={false}
+          className={`rounded-full px-4 py-3 text-center font-semibold ${option.active ? "bg-black text-white" : "text-black"}`}
+        >
+          {option.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+type Submission = ChoreSubmissionView & {
+  child: { name: string };
+  chore: {
+    id: string;
+    title: string;
+    rewardAmount: string;
+    recurrence: string;
+  };
+};
+function TaskSubmissions() {
+  const [recurrence, setRecurrence] = useState("");
+  const [status, setStatus] = useState("");
+  const query = new URLSearchParams();
+  if (recurrence) query.set("recurrence", recurrence);
+  if (status) query.set("status", status);
+  const list = usePagedList<Submission>(`/api/chore-submissions?${query}`);
+  const action = useAction();
+  function review(id: string, approve: boolean) {
+    void action.run(async () => {
+      const { submission } = await postApi<{ submission: ChoreSubmissionView }>(
+        `/api/chore-submissions/${id}/review`,
+        { decision: approve ? "APPROVE" : "REJECT" },
+      );
+      list.updateItems((items) =>
+        items.flatMap((item) =>
+          item.id !== id
+            ? [item]
+            : !status || status === submission.status
+              ? [{ ...item, ...submission }]
+              : [],
+        ),
+      );
+    }, "Task reviewed.");
+  }
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Select label="Repeat" value={recurrence} onChange={setRecurrence}>
+          <option value="">All frequencies</option>
+          {taskFrequencies.map((frequency) => (
+            <option key={frequency} value={frequency}>
+              {frequencyLabels[frequency]}
+            </option>
+          ))}
+        </Select>
+        <Select label="Status" value={status} onChange={setStatus}>
+          <option value="">All submissions</option>
+          <option value="PENDING">Needs review</option>
+          <option value="APPROVED">Approved</option>
+          <option value="REJECTED">Asked to redo</option>
+        </Select>
+      </div>
+      <Status
+        loading={list.loading}
+        error={list.error || action.error}
+        notice={action.notice}
+      />
+      {!list.loading && !list.error && !list.items.length && (
+        <Empty>No matching task submissions.</Empty>
+      )}
+      {list.items.map((submission) => (
+        <Card key={submission.id}>
+          <p className="font-semibold">
+            {submission.child.name} · {submission.chore.title}
+          </p>
+          <p className="text-sm text-[#5e5e5e]">
+            {
+              frequencyLabels[
+                submission.chore.recurrence as keyof typeof frequencyLabels
+              ]
+            }{" "}
+            · {new Date(submission.submittedAt).toLocaleString()}
+          </p>
+          <p>
+            Reward:{" "}
+            {money(
+              submission.rewardAmountPaid ?? submission.chore.rewardAmount,
+            )}
+          </p>
+          {submission.status === "PENDING" && !submission.aiReason && (
+            <p className="text-sm">
+              {submission.aiStatus === "REVIEWING"
+                ? "The evidence review is still in progress."
+                : "This task hasn’t been automatically approved. Review the evidence to decide."}
+            </p>
+          )}
+          <ChoreEvidenceReview submission={submission} />
+          {submission.status === "PENDING" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                busy={action.busy}
+                onClick={() => review(submission.id, true)}
+              >
+                Approve
+              </Button>
+              <Button
+                secondary
+                busy={action.busy}
+                onClick={() => review(submission.id, false)}
+              >
+                Ask to redo
+              </Button>
+            </div>
+          )}
+        </Card>
+      ))}
+      <ListEnd list={list} />
+    </>
+  );
+}
+
+function PurchaseList({ approvals = false }: { approvals?: boolean }) {
+  const list = usePagedList<Purchase>(
+    approvals ? "/api/purchases?view=approvals" : "/api/purchases",
+  );
+  return (
+    <>
+      <Status loading={list.loading} error={list.error} />
+      {!list.loading && !list.error && !list.items.length && (
+        <Empty>
+          {approvals
+            ? "No purchases need your attention."
+            : "Your purchases will appear here."}
+        </Empty>
+      )}
+      {list.items.map((purchase) =>
+        approvals ? (
+          <Card key={purchase.id}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold">{purchase.child?.name}</span>
+              <span className="font-display text-2xl font-bold">
+                {money(purchase.amount, purchase.currency)}
+              </span>
+            </div>
+            <p>
+              {purchaseReason(purchase.decisionReason, true) ||
+                missingReviewReason}
+            </p>
+            <ActionLink href={`/purchases/${purchase.id}`}>
+              Review invoice
+            </ActionLink>
+          </Card>
+        ) : (
+          <Link
+            key={purchase.id}
+            href={`/purchases/${purchase.id}`}
+            className="flex items-center justify-between gap-3 rounded-3xl border border-[#e8e8e8] bg-white p-5"
+          >
+            <div>
+              <p className="font-semibold">
+                {purchase.child?.name || "Purchase"}
+              </p>
+              <p className="text-sm text-[#5e5e5e]">
+                {readable(purchase.status)} ·{" "}
+                {new Date(purchase.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <span className="font-display text-xl font-bold">
+              {money(purchase.amount, purchase.currency)}
+            </span>
+          </Link>
+        ),
+      )}
+      <ListEnd list={list} />
+    </>
+  );
+}
+
+export function ApprovalsScreen({ tab }: { tab: "purchases" | "tasks" }) {
+  return (
+    <AppScreen title="Your approval queue" role="USER">
+      <FeedSwitcher
+        options={[
+          {
+            label: "Purchases",
+            href: "/approvals",
+            active: tab === "purchases",
+          },
+          {
+            label: "Tasks",
+            href: "/approvals?tab=tasks",
+            active: tab === "tasks",
+          },
+        ]}
+      />
+      {tab === "tasks" ? <TaskSubmissions /> : <PurchaseList approvals />}
+    </AppScreen>
+  );
+}
+
+function WalletActivity({
+  childId,
+  onTransfer,
+}: {
+  childId?: string;
+  onTransfer: () => void;
+}) {
+  const list = usePagedList<{
+    id: string;
+    description: string;
+    amount: string;
+    direction: string;
+    createdAt: string;
+  }>("/api/transactions?view=feed");
+  return (
+    <>
+      {childId && (
+        <BucketTransfer
+          childId={childId}
+          onDone={() => {
+            onTransfer();
+            void list.reload();
+          }}
+        />
+      )}
+      <Status loading={list.loading} error={list.error} />
+      {!list.loading && !list.error && !list.items.length && (
+        <Empty>No wallet activity yet.</Empty>
+      )}
+      {list.items.map((entry) => (
+        <Card key={entry.id}>
+          <p>{entry.description}</p>
+          <div className="flex justify-between gap-3 text-sm">
+            <time>{new Date(entry.createdAt).toLocaleString()}</time>
+            <span>
+              {entry.direction === "CREDIT" ? "+" : "−"}
+              {money(entry.amount)}
+            </span>
+          </div>
+        </Card>
+      ))}
+      <ListEnd list={list} />
+    </>
+  );
+}
+
+export function ActivityScreen({
+  tab,
+  path,
+}: {
+  tab: "purchases" | "wallet";
+  path: "/activity" | "/money";
+}) {
+  const me = useRemote<Me>("/api/auth/me");
+  const child = me.data?.subjectType === "CHILD";
+  return (
+    <AppScreen
+      title={child ? "Your money" : "Family activity"}
+      back={child ? "/home" : "/family"}
+    >
+      <Status error={me.error} />
+      {child && (
+        <Card>
+          <p>Spend allowance</p>
+          <p className="font-display text-5xl font-bold">
+            {money(
+              Number(me.data?.child?.wallet?.spendBalance || 0) -
+                Number(me.data?.child?.wallet?.purchaseReservedBalance || 0),
+            )}
+          </p>
+          <ActionLink href="/scan">Scan a purchase</ActionLink>
+          <ActionLink href="/quest">Your savings goals</ActionLink>
+        </Card>
+      )}
+      <FeedSwitcher
+        options={[
+          { label: "Purchases", href: path, active: tab === "purchases" },
+          {
+            label: "Wallet activity",
+            href: `${path}?tab=wallet`,
+            active: tab === "wallet",
+          },
+        ]}
+      />
+      {tab === "wallet" ? (
+        <WalletActivity childId={me.data?.child?.id} onTransfer={me.reload} />
+      ) : (
+        <PurchaseList />
+      )}
+    </AppScreen>
+  );
+}
+import { Field, Select } from "@/components/app-ui";
+function BucketTransfer({
+  childId,
+  onDone,
+}: {
+  childId: string;
+  onDone: () => void;
+}) {
+  const [from, setFrom] = useState("SPEND");
+  const [to, setTo] = useState("SAVE");
+  const [amount, setAmount] = useState("");
+  const action = useAction();
+  const key = useRef<string | null>(null);
+  return (
+    <Card>
+      <h2 className="font-display text-xl font-bold">Move your allowance</h2>
+      <p className="text-sm text-[#5e5e5e]">
+        Move virtual allowance between Spend and Savings.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <Select
+          label="From"
+          value={from}
+          onChange={(value) => {
+            setFrom(value);
+            key.current = null;
+          }}
+        >
+          {["SPEND", "SAVE"].map((b) => (
+            <option key={b}>{b}</option>
+          ))}
+        </Select>
+        <Select
+          label="To"
+          value={to}
+          onChange={(value) => {
+            setTo(value);
+            key.current = null;
+          }}
+        >
+          {["SPEND", "SAVE"].map((b) => (
+            <option key={b}>{b}</option>
+          ))}
+        </Select>
+      </div>
+      <Field
+        label="Amount (USD)"
+        type="number"
+        min="0.01"
+        step="0.01"
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          key.current = null;
+        }}
+      />
+      <Status error={action.error} notice={action.notice} />
+      <Button
+        busy={action.busy}
+        disabled={!childId || !(Number(amount) > 0) || from === to}
+        onClick={() =>
+          void action.run(async () => {
+            key.current ||= crypto.randomUUID();
+            await postApi(`/api/wallets/${childId}/transfer`, {
+              mode: "BETWEEN_BUCKETS",
+              amount: Number(amount),
+              fromBucket: from,
+              toBucket: to,
+              idempotencyKey: key.current,
+            });
+            setAmount("");
+            key.current = null;
+            onDone();
+          }, "Allowance moved.")
+        }
+      >
+        Move allowance
+      </Button>
+    </Card>
+  );
+}

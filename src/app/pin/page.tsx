@@ -1,5 +1,8 @@
-import PinScreen from "@/components/pin-screen";
-
-export default function PinPage() {
-  return <PinScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/pin", await searchParams);
 }

@@ -58,6 +58,6 @@ export async function sendOtpSms(params: {
   const expires = params.expiresInMinutes ?? 10;
   return sendSms({
     toPhone: params.toPhone,
-    message: `GoodSpend: Your ${params.purposeLabel} verification code is ${params.otpCode}. Valid for ${expires} minutes.`,
+    message: `Pudding: Your ${params.purposeLabel} verification code is ${params.otpCode}. Valid for ${expires} minutes.`,
   });
 }

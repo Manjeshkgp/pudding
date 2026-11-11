@@ -25,7 +25,7 @@ export interface SendEmailResult {
  * it gracefully logs the email and returns structured status so flows never crash.
  */
 export async function sendEmail(
-  payload: SendEmailPayload
+  payload: SendEmailPayload,
 ): Promise<SendEmailResult> {
   // Keep all outbound mail disabled outside production. Local signup and
   // verification flows expose their development OTP through the API instead.
@@ -45,7 +45,7 @@ export async function sendEmail(
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const fromEmail =
     process.env.RESEND_FROM_EMAIL?.trim() ||
-    "GoodSpend <noreply@goodspend.manjesh.co.in>";
+    "Pudding <noreply@goodspend.manjesh.co.in>";
 
   if (!apiKey || apiKey === "your-resend-api-key") {
     logger.warn("email.provider_unconfigured", {
@@ -127,9 +127,9 @@ export async function sendOtpEmail(params: {
 
   return sendEmail({
     to: params.to,
-    subject: `${params.otpCode} is your GoodSpend ${params.purposeLabel} code`,
+    subject: `${params.otpCode} is your Pudding ${params.purposeLabel} code`,
     html,
-    text: `Your GoodSpend ${params.purposeLabel} code is ${params.otpCode}. It expires in ${expiresInMinutes} minutes.`,
+    text: `Your Pudding ${params.purposeLabel} code is ${params.otpCode}. It expires in ${expiresInMinutes} minutes.`,
   });
 }
 
@@ -144,7 +144,7 @@ export async function sendAlertEmail(params: {
   const html = renderNotificationEmailHtml(params);
   return sendEmail({
     to: params.to,
-    subject: `GoodSpend: ${params.title}`,
+    subject: `Pudding: ${params.title}`,
     html,
     text: `${params.title}\n\n${params.body}`,
   });
@@ -160,7 +160,6 @@ export async function sendWeeklyDigestEmail(params: {
     totalEarned: string;
     totalSpent: string;
     totalSaved: string;
-    totalDonated: string;
     choresCompleted: number;
     lessonsCompleted: number;
   }>;
@@ -168,7 +167,7 @@ export async function sendWeeklyDigestEmail(params: {
   const html = renderWeeklyDigestEmailHtml(params);
   return sendEmail({
     to: params.to,
-    subject: `GoodSpend Weekly Family Digest (${params.weekLabel})`,
+    subject: `Pudding Weekly Family Digest (${params.weekLabel})`,
     html,
   });
 }

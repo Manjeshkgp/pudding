@@ -3,14 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { getApi, postApi } from "@/lib/client-api";
+import { canGoBack } from "@/lib/navigation-history";
+import { Kid } from "@/lib/app-types";
 import HelpLink from "@/components/help-link";
 import Keypad from "@/components/keypad";
 import ScrollHeader from "@/components/scroll-header";
-import { ChevronLeftIcon, CloseCircleFilledIcon, QuestionCircleFilledIcon, QuestionCircleIcon } from "@/components/icons";
+import Switch from "@/components/switch";
+import {
+  ChevronLeftIcon,
+  CloseCircleFilledIcon,
+  QuestionCircleFilledIcon,
+  QuestionCircleIcon,
+} from "@/components/icons";
 
 // Parent flow: activate a kid's wallet.
 // Spending limits and controls -> Enter PIN -> kid credentials (hidden until Reveal).
-// Sample only: nothing is sent anywhere, the PIN is never checked and the credentials are made up.
+// The server verifies the parent PIN and returns a real child username/PIN once.
 const PIN_LENGTH = 6;
 
 type Step = "limits" | "pin" | "creds";
@@ -18,7 +27,14 @@ type Step = "limits" | "pin" | "creds";
 // Credential card icons, exported from Figma (key-m and user-m).
 function KeyIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+    <svg
+      className={className}
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      aria-hidden="true"
+    >
       <path
         d="M14 10.5H26.25V17.5H23.917V21H21.4443V15.6436H19.2285V21H16.917V17.5H14V21H1.75V7H14V10.5ZM6.5625 11.6641V16.3311H8.89551V11.6641H6.5625Z"
         fill="currentColor"
@@ -29,7 +45,14 @@ function KeyIcon({ className }: { className?: string }) {
 
 function PersonIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+    <svg
+      className={className}
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      aria-hidden="true"
+    >
       <path
         d="M13.9998 2.33203C11.1003 2.33203 8.74984 4.68254 8.74984 7.58203C8.74984 10.4815 11.1003 12.832 13.9998 12.832C16.8993 12.832 19.2498 10.4815 19.2498 7.58203C19.2498 4.68254 16.8993 2.33203 13.9998 2.33203Z"
         fillRule="evenodd"
@@ -71,7 +94,13 @@ function ScratchCover({ onDone }: { onDone: () => void }) {
     for (let i = 0; i < 90; i++) {
       ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.14})`;
       ctx.beginPath();
-      ctx.arc(Math.random() * width, Math.random() * height, Math.random() * 1.6 + 0.4, 0, Math.PI * 2);
+      ctx.arc(
+        Math.random() * width,
+        Math.random() * height,
+        Math.random() * 1.6 + 0.4,
+        0,
+        Math.PI * 2,
+      );
       ctx.fill();
     }
     ctx.fillStyle = "#fff";
@@ -162,7 +191,15 @@ function ScratchCover({ onDone }: { onDone: () => void }) {
   );
 }
 
-function IconButton({ onClick, label, children }: { onClick?: () => void; label: string; children: React.ReactNode }) {
+function IconButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick?: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -171,27 +208,6 @@ function IconButton({ onClick, label, children }: { onClick?: () => void; label:
       className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
     >
       {children}
-    </button>
-  );
-}
-
-function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className="flex h-12 w-[52px] shrink-0 items-center justify-center"
-    >
-      <span className={`relative h-[31px] w-[51px] rounded-full transition-colors duration-200 ${on ? "bg-black" : "bg-[#e8e8e8]"}`}>
-        <span
-          className={`absolute left-[2px] top-[2px] size-[27px] rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2)] transition-transform duration-200 ${
-            on ? "translate-x-5" : ""
-          }`}
-        />
-      </span>
     </button>
   );
 }
@@ -211,7 +227,10 @@ function MoneyField({
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col gap-2 px-4">
-      <label htmlFor={label} className="text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">
+      <label
+        htmlFor={label}
+        className="text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black"
+      >
         {label}
       </label>
       <div
@@ -220,7 +239,9 @@ function MoneyField({
         }`}
         onClick={() => ref.current?.focus()}
       >
-        <span className="px-2 text-[18px] font-medium leading-6 text-black">$</span>
+        <span className="px-2 text-[18px] font-medium leading-6 text-black">
+          $
+        </span>
         <input
           id={label}
           ref={ref}
@@ -230,7 +251,9 @@ function MoneyField({
           onChange={(e) => {
             const v = e.target.value.replace(/[^0-9.]/g, "");
             const [whole, ...rest] = v.split(".");
-            const next = rest.length ? `${whole.slice(0, 5)}.${rest.join("").slice(0, 2)}` : whole.slice(0, 5);
+            const next = rest.length
+              ? `${whole.slice(0, 5)}.${rest.join("").slice(0, 2)}`
+              : whole.slice(0, 5);
             onChange(next);
           }}
           onFocus={() => {
@@ -255,19 +278,41 @@ function MoneyField({
       </div>
       <div className="flex items-start gap-1">
         <span className="flex items-start py-[3px]">
-          <QuestionCircleFilledIcon className="size-4" dot="#5e5e5e" mark="#fff" />
+          <QuestionCircleFilledIcon
+            className="size-4"
+            dot="#5e5e5e"
+            mark="#fff"
+          />
         </span>
-        <p className="min-w-px flex-1 text-[13px] leading-[18px] tracking-[-0.13px] text-[#5e5e5e]">{hint}</p>
+        <p className="min-w-px flex-1 text-[13px] leading-[18px] tracking-[-0.13px] text-[#5e5e5e]">
+          {hint}
+        </p>
       </div>
     </div>
   );
 }
 
-function Row({ title, text, on, onChange, last }: { title: string; text: React.ReactNode; on: boolean; onChange: (v: boolean) => void; last?: boolean }) {
+function Row({
+  title,
+  text,
+  on,
+  onChange,
+  last,
+}: {
+  title: string;
+  text: React.ReactNode;
+  on: boolean;
+  onChange: (v: boolean) => void;
+  last?: boolean;
+}) {
   return (
-    <div className={`flex items-center justify-center gap-8 py-5 first:pt-0 ${last ? "pb-0" : "border-b border-[#e8e8e8]"}`}>
+    <div
+      className={`flex items-center justify-center gap-8 py-5 first:pt-0 ${last ? "pb-0" : "border-b border-[#e8e8e8]"}`}
+    >
       <div className="flex min-w-px flex-1 flex-col gap-1.5 text-black">
-        <p className="text-[17px] font-medium leading-[22px] tracking-[-0.17px]">{title}</p>
+        <p className="text-[17px] font-medium leading-[22px] tracking-[-0.17px]">
+          {title}
+        </p>
         <p className="text-[13px] leading-[18px] tracking-[-0.13px]">{text}</p>
       </div>
       <Switch on={on} onChange={onChange} label={title} />
@@ -275,7 +320,15 @@ function Row({ title, text, on, onChange, last }: { title: string; text: React.R
   );
 }
 
-function BottomButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+function BottomButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -290,12 +343,37 @@ function BottomButton({ children, onClick, disabled }: { children: React.ReactNo
   );
 }
 
-export default function ActivateWallet({ name }: { name: string }) {
+export default function ActivateWallet({ childId }: { childId: string }) {
   const router = useRouter();
+  const leave = () => (canGoBack() ? router.back() : router.replace("/family"));
+  const [name, setName] = useState("Your child");
+  const [daily, setDaily] = useState("20");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [credentials, setCredentials] = useState<{
+    username: string;
+    pin: string;
+  } | null>(null);
+  useEffect(() => {
+    let live = true;
+    getApi<Kid>(`/api/children/${childId}`)
+      .then((k) => {
+        if (live) {
+          setName(k.name);
+          if (k.pinSet) router.replace(`/children/${childId}/settings`);
+        }
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [childId, router]);
   const [step, setStep] = useState<Step>("limits");
   const [weekly, setWeekly] = useState("");
   const [single, setSingle] = useState("");
-  const [instore, setInstore] = useState(false);
+  const [instore, setInstore] = useState(true);
   const [online, setOnline] = useState(true);
   const [ageBlock, setAgeBlock] = useState(true);
   // The phone keyboard is open while a field has focus; Continue steps aside for it.
@@ -315,10 +393,36 @@ export default function ActivateWallet({ name }: { name: string }) {
   }, []);
   const [pin, setPin] = useState("");
   const [revealed, setRevealed] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
 
-  // Fixed sample credentials
-  const username = `${name}1245`;
-  const password = "Axesilva@1345";
+  // Newly generated credentials are shown once after successful activation.
+  const username = credentials?.username || "";
+  const password = credentials?.pin || "";
+  async function activate() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await postApi<{ username: string; pin: string }>(
+        `/api/children/${childId}/activate`,
+        {
+          parentPin: pin,
+          dailyLimit: Number(daily),
+          weeklyLimit: weekly ? Number(weekly) : null,
+          maxPerTransaction: single ? Number(single) : null,
+          inStoreEnabled: instore,
+          onlineEnabled: online,
+          ageBlockEnabled: ageBlock,
+        },
+      );
+      setCredentials(result);
+      setStep("creds");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to activate wallet.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function onKey(k: string) {
     if (k === "back") setPin((p) => p.slice(0, -1));
@@ -329,7 +433,7 @@ export default function ActivateWallet({ name }: { name: string }) {
     <div className="flex items-center gap-3 px-4">
       <IconButton
         label="Back"
-        onClick={() => (step === "pin" ? setStep("limits") : router.push("/family"))}
+        onClick={() => (step === "pin" ? setStep("limits") : leave())}
       >
         <ChevronLeftIcon className="size-6" />
       </IconButton>
@@ -339,7 +443,10 @@ export default function ActivateWallet({ name }: { name: string }) {
         </p>
       )}
       {!title && <span className="flex-1" />}
-      <HelpLink aria-label="Help" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]">
+      <HelpLink
+        aria-label="Help"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
+      >
         <QuestionCircleIcon className="size-6" />
       </HelpLink>
     </div>
@@ -350,22 +457,28 @@ export default function ActivateWallet({ name }: { name: string }) {
       <main className="min-h-dvh bg-[#a0e1e1]">
         <div className="relative mx-auto flex min-h-dvh w-full max-w-[520px] items-center justify-center px-4">
           <div className="relative">
-          <h1 className="absolute bottom-full left-1/2 mb-8 -translate-x-1/2 whitespace-nowrap font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-black">{name} credentials</h1>
-          <div
-            className={`relative flex flex-col gap-5 overflow-clip rounded-[32px] px-8 py-5 transition-colors duration-300 ${
-              revealed ? "bg-white" : "bg-[#ffd7ef]"
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <PersonIcon className="size-7 text-black" />
-              <p className="font-display text-[24px] font-bold leading-8 tracking-[-0.48px] text-black">{username}</p>
+            <h1 className="absolute bottom-full left-1/2 mb-8 -translate-x-1/2 whitespace-nowrap font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-black">
+              {name} credentials
+            </h1>
+            <div
+              className={`relative flex flex-col gap-5 overflow-clip rounded-[32px] px-8 py-5 transition-colors duration-300 ${
+                revealed ? "bg-white" : "bg-[#ffd7ef]"
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <PersonIcon className="size-7 text-black" />
+                <p className="font-display text-[24px] font-bold leading-8 tracking-[-0.48px] text-black">
+                  {username}
+                </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <KeyIcon className="size-7 text-black" />
+                <p className="font-display text-[24px] font-bold leading-8 tracking-[-0.48px] text-black">
+                  {password}
+                </p>
+              </div>
+              {!revealed && <ScratchCover onDone={() => setRevealed(true)} />}
             </div>
-            <div className="flex items-center gap-4">
-              <KeyIcon className="size-7 text-black" />
-              <p className="font-display text-[24px] font-bold leading-8 tracking-[-0.48px] text-black">{password}</p>
-            </div>
-            {!revealed && <ScratchCover onDone={() => setRevealed(true)} />}
-          </div>
           </div>
         </div>
         <AnimatePresence>
@@ -377,12 +490,49 @@ export default function ActivateWallet({ name }: { name: string }) {
               className="fixed inset-x-0 bottom-0 mx-auto flex w-full max-w-[520px] flex-col items-center gap-6 px-4 pb-[max(40px,env(safe-area-inset-bottom))]"
             >
               <div className="flex items-center gap-3">
-                <QuestionCircleFilledIcon className="size-5 shrink-0" dot="#000" mark="#a0e1e1" />
+                <QuestionCircleFilledIcon
+                  className="size-5 shrink-0"
+                  dot="#000"
+                  mark="#a0e1e1"
+                />
                 <p className="text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black">
-                  You can manage password in the kids setting.
+                  Save this PIN now. It is only shown once. Reset it from Manage
+                  if needed.
                 </p>
               </div>
-              <BottomButton onClick={() => router.push("/family")}>Done</BottomButton>
+              <div className="grid w-full grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        `Username: ${username}\nPIN: ${password}`,
+                      );
+                      setCopyStatus("Login copied");
+                    } catch {
+                      setCopyStatus(
+                        "Couldn’t copy. Save the username and PIN from the card.",
+                      );
+                    }
+                  }}
+                  className="min-h-[52px] rounded-full bg-white px-4 py-3 font-medium text-black"
+                >
+                  {copyStatus === "Login copied" ? "Copied" : "Copy login"}
+                </button>
+                <BottomButton onClick={() => router.replace("/family")}>
+                  Done
+                </BottomButton>
+              </div>
+              <p
+                role="status"
+                className={
+                  copyStatus && copyStatus !== "Login copied"
+                    ? "text-sm text-black"
+                    : "sr-only"
+                }
+              >
+                {copyStatus}
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -403,14 +553,24 @@ export default function ActivateWallet({ name }: { name: string }) {
               <span
                 key={i}
                 className={`size-6 rounded-full border border-solid ${
-                  i < pin.length ? "border-[#e8e8e8] bg-black" : "border-[#a6a6a6]"
+                  i < pin.length
+                    ? "border-[#e8e8e8] bg-black"
+                    : "border-[#a6a6a6]"
                 }`}
               />
             ))}
           </div>
+          {error && (
+            <p role="alert" className="px-4 text-red-700">
+              {error}
+            </p>
+          )}
           <Keypad onKey={onKey} />
           <div className="px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
-            <BottomButton disabled={pin.length < PIN_LENGTH} onClick={() => setStep("creds")}>
+            <BottomButton
+              disabled={busy || pin.length < PIN_LENGTH}
+              onClick={activate}
+            >
               Next
             </BottomButton>
           </div>
@@ -425,45 +585,70 @@ export default function ActivateWallet({ name }: { name: string }) {
         <ScrollHeader
           title={`${name}’s spending limits and controls`}
           left={
-            <IconButton label="Back" onClick={() => router.push("/family")}>
+            <IconButton label="Back" onClick={leave}>
               <ChevronLeftIcon className="size-6" />
             </IconButton>
           }
           right={
-            <HelpLink aria-label="Help" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]">
+            <HelpLink
+              aria-label="Help"
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
+            >
               <QuestionCircleIcon className="size-6" />
             </HelpLink>
           }
         />
+        {error && (
+          <p role="alert" className="px-4 text-red-700">
+            {error}
+          </p>
+        )}
         <div className="flex flex-col gap-10">
           <div className="flex flex-col gap-7">
-            <h2 className="px-4 text-[20px] font-semibold leading-7 tracking-[-0.15px] text-black">{name}’s spending limit</h2>
+            <h2 className="px-4 text-[20px] font-semibold leading-7 tracking-[-0.15px] text-black">
+              {name}’s spending limit
+            </h2>
             <div className="flex flex-col gap-[30px]">
               <MoneyField
+                label="Daily spending"
+                hint="Within this limit, AI reviews the invoice. Set 0 to ask you every time."
+                value={daily}
+                onChange={setDaily}
+              />
+              <MoneyField
                 label="Weekly spending"
-                hint="The most can spend in a week. It resets every Monday."
+                hint="Above this weekly amount, purchases need your review. Usage resets on Monday (UTC)."
                 value={weekly}
                 onChange={setWeekly}
               />
               <MoneyField
                 label="Single purchase"
-                hint={`The most ${name} can spend on one purchase, even if there’s still room in the weekly limit.`}
+                hint={`Purchases above this amount go to you for approval.`}
                 value={single}
                 onChange={setSingle}
               />
             </div>
           </div>
           <div className="flex flex-col gap-7">
-            <h2 className="px-4 text-[20px] font-semibold leading-7 tracking-[-0.15px] text-black">{name}’s wallet control</h2>
+            <h2 className="px-4 text-[20px] font-semibold leading-7 tracking-[-0.15px] text-black">
+              {name}’s wallet control
+            </h2>
             <div className="flex flex-col px-4">
-              <Row title="In-store" text="e.g grocery, toy etc" on={instore} onChange={setInstore} />
-              <Row title="Online" text="e.g Amazon, e-bay etc" on={online} onChange={setOnline} />
+              <Row
+                title="AI review for scanned purchases"
+                text="When off, every scanned purchase asks for parent approval."
+                on={instore}
+                onChange={setInstore}
+              />
+
               <Row
                 title="Age-restricted merchant block"
                 text={
                   <>
-                    Blocks some merchants that sell age- restricted items.{" "}
-                    <span className="font-medium text-[#276ef1]">Learn more</span>
+                    Ask the AI to check whether the items suit your child’s age.{" "}
+                    <span className="font-medium text-[#276ef1]">
+                      Learn more
+                    </span>
                   </>
                 }
                 on={ageBlock}
@@ -474,7 +659,9 @@ export default function ActivateWallet({ name }: { name: string }) {
           </div>
         </div>
       </div>
-      <div className={`fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[520px] bg-gradient-to-t from-white from-70% to-white/0 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-6 transition-opacity duration-150 ${typing ? "pointer-events-none opacity-0" : ""}`}>
+      <div
+        className={`fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[520px] bg-gradient-to-t from-white from-70% to-white/0 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-6 transition-opacity duration-150 ${typing ? "pointer-events-none opacity-0" : ""}`}
+      >
         <BottomButton onClick={() => setStep("pin")}>Continue</BottomButton>
       </div>
     </main>

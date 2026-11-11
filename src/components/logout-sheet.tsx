@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { disableWebPush } from "@/lib/web-push-client";
+import { postApi } from "@/lib/client-api";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -18,6 +20,8 @@ export default function LogoutSheet({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -64,6 +68,7 @@ export default function LogoutSheet({
               <h2 className="w-full text-center font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-black">
                 Are your sure you want to leave this journey?
               </h2>
+              {error && <p role="alert">{error}</p>}
               <div className="flex w-full flex-col gap-3">
                 <button
                   type="button"
@@ -74,7 +79,22 @@ export default function LogoutSheet({
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push("/start")}
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await disableWebPush().catch(() => undefined);
+                      await postApi("/api/auth/logout", {});
+                      sessionStorage.clear();
+                      router.replace("/start");
+                      router.refresh();
+                    } catch (e) {
+                      setError(
+                        e instanceof Error ? e.message : "Unable to sign out",
+                      );
+                      setBusy(false);
+                    }
+                  }}
                   className="flex h-[52px] w-full items-center justify-center rounded-full bg-[#fff0ee] px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-[#de1135] shadow-[inset_-2px_-4px_32px_rgba(255,255,255,0.3)] transition-colors active:bg-[#ffe3df]"
                 >
                   Yes! I am

@@ -1,3 +1,4 @@
+import { notifyWithPush } from "@/services/notification.service";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
@@ -7,10 +8,7 @@ import {
   handleRouteError,
   validateBody,
 } from "@/lib/api-response";
-import {
-  requireChildOrFamilyParent,
-  requireParent,
-} from "@/lib/auth-guard";
+import { requireChildOrFamilyParent, requireParent } from "@/lib/auth-guard";
 import {
   moveBetweenChildBuckets,
   transferFromFamilyToChild,
@@ -22,7 +20,7 @@ const transferSchema = z.discriminatedUnion("mode", [
     mode: z.literal("FAMILY_TO_CHILD"),
     amount: z.number().positive("Amount must be greater than 0").max(10000),
     targetBucket: z
-      .enum(["DEFAULT_SPLIT", "SPEND", "SAVE", "GIVE"])
+      .enum(["DEFAULT_SPLIT", "SPEND", "SAVE"])
       .default("DEFAULT_SPLIT"),
     description: z.string().trim().max(200).optional(),
     idempotencyKey: z.string().trim().min(4).max(128).optional(),
@@ -30,8 +28,8 @@ const transferSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("BETWEEN_BUCKETS"),
     amount: z.number().positive("Amount must be greater than 0").max(10000),
-    fromBucket: z.enum(["SPEND", "SAVE", "GIVE"]),
-    toBucket: z.enum(["SPEND", "SAVE", "GIVE"]),
+    fromBucket: z.enum(["SPEND", "SAVE"]),
+    toBucket: z.enum(["SPEND", "SAVE"]),
     description: z.string().trim().max(200).optional(),
     idempotencyKey: z.string().trim().min(4).max(128).optional(),
   }),
@@ -41,11 +39,11 @@ const transferSchema = z.discriminatedUnion("mode", [
  * POST /api/wallets/[childId]/transfer
  * Supports two atomic transfer modes:
  * 1. FAMILY_TO_CHILD (FR-2.3): Parent moves money from Family Unallocated Budget to Child's Wallet instantly.
- * 2. BETWEEN_BUCKETS (FR-3.1): Child or Parent moves money between child's own Spend/Save/Give buckets.
+ * 2. BETWEEN_BUCKETS (FR-3.1): Child or Parent moves money between child's own Spend and Save buckets.
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
@@ -60,7 +58,11 @@ export async function POST(
         where: { id: childId },
       });
       if (!child || child.familyId !== family.id) {
-        throw new ApiError(404, "Child not found in your family", "CHILD_NOT_FOUND");
+        throw new ApiError(
+          404,
+          "Child not found in your family",
+          "CHILD_NOT_FOUND",
+        );
       }
 
       const idempotencyKey =
@@ -82,7 +84,7 @@ export async function POST(
       });
 
       if (!result.idempotentReplay) {
-        await prisma.notification.create({
+        await notifyWithPushRecord({
           data: {
             familyId: family.id,
             childId: child.id,
@@ -117,19 +119,18 @@ export async function POST(
             id: result.wallet.id,
             spendBalance: result.wallet.spendBalance.toString(),
             saveBalance: result.wallet.saveBalance.toString(),
-            giveBalance: result.wallet.giveBalance.toString(),
           },
           idempotentReplay: result.idempotentReplay,
         },
         200,
-        `Transferred $${input.amount.toFixed(2)} to ${child.name}'s wallet`
+        `Transferred $${input.amount.toFixed(2)} to ${child.name}'s wallet`,
       );
     }
 
     // BETWEEN_BUCKETS mode (allowed for the Child themselves or a Parent in the family)
     const { session, child, isParent } = await requireChildOrFamilyParent(
       req,
-      childId
+      childId,
     );
 
     const idempotencyKey =
@@ -174,14 +175,21 @@ export async function POST(
           id: result.wallet.id,
           spendBalance: result.wallet.spendBalance.toString(),
           saveBalance: result.wallet.saveBalance.toString(),
-          giveBalance: result.wallet.giveBalance.toString(),
         },
         idempotentReplay: result.idempotentReplay,
       },
       200,
-      `Moved $${input.amount.toFixed(2)} from ${input.fromBucket} to ${input.toBucket}`
+      `Moved $${input.amount.toFixed(2)} from ${input.fromBucket} to ${input.toBucket}`,
     );
   } catch (error) {
     return handleRouteError(error);
   }
+}
+
+async function notifyWithPushRecord(
+  input: Parameters<typeof prisma.notification.create>[0],
+) {
+  return notifyWithPush(
+    input.data as import("@prisma/client").Prisma.NotificationUncheckedCreateInput,
+  );
 }

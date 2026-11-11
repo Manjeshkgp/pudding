@@ -40,7 +40,11 @@ function ensureWebVapidConfigured(): boolean {
     vapidConfigured = true;
     return true;
   } catch (err) {
-    logger.warn("push.vapid_configuration_failed", { provider: "web_vapid" }, err);
+    logger.warn(
+      "push.vapid_configuration_failed",
+      { provider: "web_vapid" },
+      err,
+    );
     return false;
   }
 }
@@ -51,7 +55,7 @@ function ensureWebVapidConfigured(): boolean {
  */
 async function sendWebVapidNotification(
   sub: PushSubscription,
-  payload: PushMessagePayload
+  payload: PushMessagePayload,
 ): Promise<boolean> {
   if (!sub.p256dh || !sub.auth) {
     return false;
@@ -79,7 +83,8 @@ async function sendWebVapidNotification(
         body: payload.body,
         data: payload.data || {},
         timestamp: Date.now(),
-      })
+      }),
+      { timeout: 5000, TTL: 300 },
     );
     return true;
   } catch (err: unknown) {
@@ -92,11 +97,15 @@ async function sendWebVapidNotification(
         })
         .catch(() => null);
     }
-    logger.warn("push.web_vapid_delivery_failed", {
-      provider: "web_vapid",
-      httpStatus: statusCode,
-      subscriptionExpired: statusCode === 404 || statusCode === 410,
-    }, err);
+    logger.warn(
+      "push.web_vapid_delivery_failed",
+      {
+        provider: "web_vapid",
+        httpStatus: statusCode,
+        subscriptionExpired: statusCode === 404 || statusCode === 410,
+      },
+      err,
+    );
     return false;
   }
 }
@@ -108,7 +117,7 @@ async function sendWebVapidNotification(
  */
 async function sendMobilePushNotification(
   sub: PushSubscription,
-  payload: PushMessagePayload
+  payload: PushMessagePayload,
 ): Promise<boolean> {
   if (!sub.deviceToken) {
     return false;
@@ -141,6 +150,18 @@ export async function dispatchPushToTarget(params: {
     };
   }
 
+  if (params.userId) {
+    const preference = await prisma.notificationPreference.findUnique({
+      where: { userId: params.userId },
+    });
+    if (preference && !preference.pushEnabled)
+      return {
+        totalSubscriptions: 0,
+        webVapidSent: 0,
+        mobileSent: 0,
+        failedOrExpired: 0,
+      };
+  }
   const subscriptions = await prisma.pushSubscription.findMany({
     where: {
       ...(params.userId ? { userId: params.userId } : {}),

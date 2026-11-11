@@ -1,5 +1,8 @@
-import VerifyScreen from "@/components/verify-screen";
-
-export default function VerifyPage() {
-  return <VerifyScreen />;
+import { redirectLegacyPage } from "@/lib/page-auth";
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return redirectLegacyPage("/verify", await searchParams);
 }

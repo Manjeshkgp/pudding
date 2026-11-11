@@ -1,17 +1,35 @@
 "use client";
-
-import { BackPill, EmptyState } from "@/components/coparent-parts";
-
-// Parent flow: invitations this parent has received from another parent (sample: none).
+import { ListEnd, usePagedList } from "@/components/paged-list";
+import {
+  AppScreen,
+  Card,
+  Status,
+  Empty,
+  ActionLink,
+} from "@/components/app-ui";
 export default function CoparentInvitationsScreen() {
+  const remote = usePagedList<{
+    id: string;
+    family: { name: string };
+    inviteToken: string;
+  }>("/api/family/invitations");
   return (
-    <main className="min-h-dvh bg-white">
-      <div className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col pt-[max(16px,env(safe-area-inset-top))]">
-        <div className="px-4">
-          <BackPill to="/coparent" />
-        </div>
-        <EmptyState text="You got no co-parenting invitations" wide />
-      </div>
-    </main>
+    <AppScreen title="Your invitations" back="/coparent" role="USER">
+      <Status loading={remote.loading} error={remote.error} />
+      {!remote.loading && !remote.error && remote.items.length === 0 && (
+        <Empty>No active co-parent invitations for your email.</Empty>
+      )}
+      {remote.items.map((i) => (
+        <Card key={i.id}>
+          <p>{i.family.name}</p>
+          <ActionLink
+            href={`/accept-invite?token=${encodeURIComponent(i.inviteToken)}`}
+          >
+            View invitation
+          </ActionLink>
+        </Card>
+      ))}
+      <ListEnd list={remote} />
+    </AppScreen>
   );
 }

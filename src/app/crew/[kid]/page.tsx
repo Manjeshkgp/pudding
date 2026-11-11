@@ -1,10 +1,8 @@
-import EditKidScreen from "@/components/edit-kid-screen";
-
+import { redirectLegacyPage } from "@/lib/page-auth";
 export default async function Page({
   params,
 }: {
   params: Promise<{ kid: string }>;
 }) {
-  const { kid } = await params;
-  return <EditKidScreen childId={kid} />;
+  return redirectLegacyPage(`/crew/${(await params).kid}`);
 }

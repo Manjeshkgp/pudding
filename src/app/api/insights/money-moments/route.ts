@@ -15,7 +15,8 @@ export async function GET(req: NextRequest) {
     const childIdParam = req.nextUrl.searchParams.get("childId");
 
     const isParent = session.subjectType === "USER";
-    let targetChildId = session.subjectType === "CHILD" ? session.sub : childIdParam;
+    let targetChildId =
+      session.subjectType === "CHILD" ? session.sub : childIdParam;
 
     if (isParent && !targetChildId) {
       const { family } = await requireParent(req);
@@ -69,7 +70,6 @@ export async function GET(req: NextRequest) {
     let totalEarned = new Prisma.Decimal(0);
     let totalSaved = new Prisma.Decimal(0);
     let totalSpent = new Prisma.Decimal(0);
-    let totalGiven = new Prisma.Decimal(0);
 
     for (const entry of recentLedger) {
       if (
@@ -83,8 +83,6 @@ export async function GET(req: NextRequest) {
         totalEarned = totalEarned.plus(entry.amount);
         if (entry.walletBucket === "SAVE") {
           totalSaved = totalSaved.plus(entry.amount);
-        } else if (entry.walletBucket === "GIVE") {
-          totalGiven = totalGiven.plus(entry.amount);
         }
       }
 
@@ -99,15 +97,14 @@ export async function GET(req: NextRequest) {
       ) {
         totalSpent = totalSpent.plus(entry.amount);
       }
-
-      if (entry.direction === "DEBIT" && entry.type === "DONATION") {
-        totalGiven = totalGiven.plus(entry.amount);
-      }
     }
 
     const savingsRatePercent = totalEarned.gt(0)
-      ? Math.min(100, Math.round(totalSaved.div(totalEarned).mul(100).toNumber()))
-      : child.wallet?.defaultSplitSave ?? 20;
+      ? Math.min(
+          100,
+          Math.round(totalSaved.div(totalEarned).mul(100).toNumber()),
+        )
+      : (child.wallet?.defaultSplitSave ?? 30);
 
     // Build Child-Facing "Money Moments" (FR-9.3)
     const moneyMoments: Array<{
@@ -140,7 +137,7 @@ export async function GET(req: NextRequest) {
       const topGoal = child.savingsGoals[0];
       const pct = topGoal.targetAmount.gt(0)
         ? Math.round(
-            topGoal.currentAmount.div(topGoal.targetAmount).mul(100).toNumber()
+            topGoal.currentAmount.div(topGoal.targetAmount).mul(100).toNumber(),
           )
         : 0;
       moneyMoments.push({
@@ -170,14 +167,6 @@ export async function GET(req: NextRequest) {
             teachingTip:
               "Encourage the 24-hour rule on Option B product requests over $15 before approving.",
           },
-          {
-            id: "guide-giving-impact",
-            topic: "Generosity & Giving",
-            contextTrigger: `${child.name} currently has $${child.wallet?.giveBalance.toFixed(2) ?? "0.00"} in their Give bucket.`,
-            starterQuestion: `"Your Give bucket has $${child.wallet?.giveBalance.toFixed(2) ?? "0.00"} ready to help others. Which cause or charity do you care about most this year?"`,
-            teachingTip:
-              "Review the vetted charities together in the Giving tab and let your child pick where their donation goes.",
-          },
         ]
       : [];
 
@@ -188,7 +177,6 @@ export async function GET(req: NextRequest) {
         totalEarned: totalEarned.toString(),
         totalSaved: totalSaved.toString(),
         totalSpent: totalSpent.toString(),
-        totalGiven: totalGiven.toString(),
         savingsRatePercent,
         completedChoresCount,
       },

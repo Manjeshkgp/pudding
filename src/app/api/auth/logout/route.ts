@@ -1,3 +1,4 @@
+import { clearParentSignupCookie } from "@/lib/parent-signup";
 import { NextRequest } from "next/server";
 import { apiSuccess, handleRouteError } from "@/lib/api-response";
 import { clearSessionCookie, getSessionFromRequest } from "@/lib/jwt";
@@ -22,8 +23,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const response = apiSuccess({ loggedOut: true }, 200, "Logged out successfully");
+    const response = apiSuccess(
+      { loggedOut: true },
+      200,
+      "Logged out successfully",
+    );
     clearSessionCookie(response);
+    clearParentSignupCookie(response);
     return response;
   } catch (error) {
     return handleRouteError(error);

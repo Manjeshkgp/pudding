@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import { useAction, Status } from "@/components/app-ui";
+import { postApi } from "@/lib/client-api";
 import { useRouter } from "next/navigation";
 import { useReducedMotion } from "framer-motion";
 import { ChevronRightIcon } from "@/components/icons";
@@ -17,31 +18,41 @@ const CAT = "/lottie/notifications-cat.json";
 export default function NotificationsScreen() {
   const reduceMotion = useReducedMotion();
   const router = useRouter();
+  const action = useAction();
+  async function continueSignup() {
+    await postApi("/api/auth/parent/signup/notifications", {});
+    router.replace("/onboarding/security");
+    router.refresh();
+  }
 
   // Opens the browser's own "allow notifications" prompt, then moves on
   // whatever the answer is.
   async function enable() {
     try {
       if (typeof Notification !== "undefined") {
-        await Notification.requestPermission();
+        const permission = await Notification.requestPermission();
+        sessionStorage.setItem("pudding-push-requested", permission);
       }
     } catch {
       // Some browsers block the prompt; carry on anyway.
     }
-    router.push("/security");
+    await action.run(continueSignup);
   }
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-white">
       <div className="flex shrink-0 items-center justify-end px-4 pt-[max(20px,env(safe-area-inset-top))]">
-        <Link
-          href="/security"
+        <button
+          type="button"
+          disabled={action.busy}
+          onClick={() => void action.run(continueSignup)}
           className="flex h-11 items-center justify-center rounded-full bg-white px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
         >
           Skip
-        </Link>
+        </button>
       </div>
 
+      <Status error={action.error} />
       <div className="flex shrink-0 flex-col gap-2 px-4 pb-8 pt-6 text-black">
         <h1 className="font-display text-[32px] font-bold leading-10 tracking-[-0.64px]">
           Busy parent?
@@ -81,6 +92,7 @@ export default function NotificationsScreen() {
         <button
           type="button"
           onClick={enable}
+          disabled={action.busy}
           className="relative flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 py-3.5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white"
         >
           Enable notifications

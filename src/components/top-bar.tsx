@@ -1,3 +1,4 @@
+import BackButton from "@/components/back-button";
 import Link from "next/link";
 import HelpLink from "@/components/help-link";
 import { ChevronLeftIcon, QuestionCircleIcon } from "@/components/icons";
@@ -11,16 +12,26 @@ export default function TopBar({
   help = true,
   glassHelp = false,
 }: {
-  backHref: string;
+  backHref: string | null;
   help?: boolean;
   // Frosted-glass help button, as on the password screen
   glassHelp?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between px-4 pt-[max(20px,env(safe-area-inset-top))]">
-      <Link href={backHref} aria-label="Back" className={circle}>
-        <ChevronLeftIcon className="size-6 text-black" />
-      </Link>
+      {backHref ? (
+        <BackButton fallback={backHref} className={circle}>
+          <ChevronLeftIcon className="size-6 text-black" />
+        </BackButton>
+      ) : (
+        <Link
+          href="/login"
+          aria-label="Save and exit signup"
+          className={circle}
+        >
+          Exit
+        </Link>
+      )}
       {help && (
         <HelpLink
           aria-label="Help"

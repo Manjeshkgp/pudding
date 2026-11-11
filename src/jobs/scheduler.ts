@@ -1,3 +1,4 @@
+import { reconcilePendingPurchases } from "./purchase-reconciliation.job";
 import cron from "node-cron";
 import { processDueAllowances } from "./allowance.job";
 import { processSavingsInterest } from "./interest.job";
@@ -23,6 +24,18 @@ export function initInProcessCronJobs() {
   }
 
   globalForCron.goodspendCronInitialized = true;
+
+  cron.schedule("*/2 * * * *", async () => {
+    try {
+      await reconcilePendingPurchases();
+    } catch (error) {
+      logger.error(
+        "cron.job_failed",
+        { job: "purchase_reconciliation" },
+        error,
+      );
+    }
+  });
 
   // Run allowance check every 15 minutes
   cron.schedule("*/15 * * * *", async () => {

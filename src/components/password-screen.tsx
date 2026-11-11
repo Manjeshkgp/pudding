@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/top-bar";
 import {
@@ -10,12 +10,12 @@ import {
   TickCircleIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
-import { postApi } from "@/lib/client-api";
+import { getApi, postApi } from "@/lib/client-api";
 
 // Parent flow, step 5: set a password.
 // States from Figma: empty (idle and focused), typing with the password
 // hidden, typing with it shown, filled (8+ characters, Continue turns black)
-// and loading after Continue. Sample data only: nothing is saved.
+// and loading after Continue. Signup progress is persisted through the API.
 const MIN_LENGTH = 8;
 
 export default function PasswordScreen() {
@@ -28,7 +28,18 @@ export default function PasswordScreen() {
   const [error, setError] = useState("");
   const { open, offset } = useKeyboard(inputRef);
 
-  const valid = password.length >= MIN_LENGTH;
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    getApi<{ signedIn: boolean; passwordSaved: boolean }>(
+      "/api/auth/parent/signup/status",
+    )
+      .then((r) => {
+        if (r.signedIn) router.replace("/account/security");
+        else setSaved(r.passwordSaved);
+      })
+      .catch(() => undefined);
+  }, [router]);
+  const valid = (saved && !password) || password.length >= MIN_LENGTH;
   const onKeyboard = focused && open;
 
   async function submit() {
@@ -36,10 +47,13 @@ export default function PasswordScreen() {
     setLoading(true);
     setError("");
     try {
-      await postApi("/api/auth/parent/signup/password", { password });
-      router.push("/notifications");
+      if (password)
+        await postApi("/api/auth/parent/signup/password", { password });
+      router.push("/onboarding/notifications");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to save password.");
+      setError(
+        cause instanceof Error ? cause.message : "Unable to save password.",
+      );
       setLoading(false);
     }
   }
@@ -48,12 +62,16 @@ export default function PasswordScreen() {
     "text-[17px] font-medium leading-[22px] tracking-[-0.17px] transition-colors";
   const barColor =
     valid || loading ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]";
-  const barInner = loading ? <SpinnerIcon className="size-6 text-white" /> : "Continue";
+  const barInner = loading ? (
+    <SpinnerIcon className="size-6 text-white" />
+  ) : (
+    "Continue"
+  );
 
   return (
     <main className="min-h-dvh bg-white">
       <div className="w-full bg-white">
-        <TopBar backHref="/verify" glassHelp />
+        <TopBar backHref={null} glassHelp />
 
         <header className="flex flex-col gap-2 px-4 pb-8 pt-6">
           <h1 className="font-display text-[32px] font-bold leading-[40px] tracking-[-0.64px] text-black">
@@ -64,7 +82,11 @@ export default function PasswordScreen() {
           </p>
         </header>
 
-        {error && <p role="alert" className="px-4 pb-3 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p role="alert" className="px-4 pb-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
         <form
           className="flex flex-col gap-2 px-4"
@@ -96,7 +118,11 @@ export default function PasswordScreen() {
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              placeholder="Enter your password"
+              placeholder={
+                saved
+                  ? "Password saved — leave blank to keep it"
+                  : "Enter your password"
+              }
               className="h-full min-w-0 flex-1 bg-transparent px-2 text-[17px] leading-[25px] tracking-[-0.17px] text-black outline-none placeholder:text-[#5e5e5e]"
             />
             {password && (

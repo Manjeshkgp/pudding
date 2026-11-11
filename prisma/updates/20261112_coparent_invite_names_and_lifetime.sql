@@ -1,0 +1,12 @@
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "firstName" TEXT,
+  ADD COLUMN IF NOT EXISTS "lastName" TEXT;
+
+ALTER TABLE "CoParentInvite"
+  ADD COLUMN IF NOT EXISTS "firstName" TEXT,
+  ADD COLUMN IF NOT EXISTS "lastName" TEXT,
+  ALTER COLUMN "expiresAt" DROP NOT NULL;
+
+UPDATE "CoParentInvite"
+SET "expiresAt" = NULL
+WHERE "status" = 'PENDING' AND "expiresAt" IS NOT NULL;
