@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import MobileOnly from "@/components/mobile-only";
+import ClickFeedback from "@/components/click-feedback";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -25,6 +26,7 @@ export default function RootLayout({
       <body className="min-h-dvh bg-white text-slate-900 antialiased">
         <div className="desktop:hidden">{children}</div>
         <MobileOnly />
+        <ClickFeedback />
       </body>
     </html>
   );
