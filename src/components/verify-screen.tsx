@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import OnboardingToast, { type OnboardingToastMessage } from "@/components/onboarding-toast";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/top-bar";
 import {
-  AlertCircleIcon,
   CloseCircleFilledIcon,
   SpinnerIcon,
-  TickCircleIcon,
 } from "@/components/icons";
 import { useKeyboard } from "@/components/use-keyboard";
 import { getApi, postApi } from "@/lib/client-api";
@@ -18,38 +16,37 @@ import { getApi, postApi } from "@/lib/client-api";
 // code resent, and loading after Verify.
 const WAIT_SECONDS = 29;
 
-type Toast = { id: number; kind: "error" | "success"; text: string } | null;
-
 export default function VerifyScreen() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [invalid, setInvalid] = useState(false);
   const [seconds, setSeconds] = useState(WAIT_SECONDS);
-  const [toast, setToast] = useState<Toast>(null);
+  const [toast, setToast] = useState<OnboardingToastMessage | null>(null);
   const [email, setEmail] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const { open, offset } = useKeyboard(inputRef);
 
   const complete = code.length === 6;
   const onKeyboard = focused && open;
+  const resendDisabled = seconds > 0 || !email || loading || resending;
 
   // Show the email typed on the previous screen
   useEffect(() => {
-    getApi<{ emailVerified: boolean; nextRoute: string }>(
+    getApi<{ email: string; emailVerified: boolean; nextRoute: string }>(
       "/api/auth/parent/signup/status",
     )
       .then((r) => {
-        if (r.emailVerified) router.replace(r.nextRoute);
+        if (r.emailVerified || !r.email) router.replace(r.nextRoute);
+        else setEmail(r.email);
       })
       .catch(() => undefined);
   }, [router]);
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem("pudding-email");
-      if (saved) setEmail(saved);
       setDevOtp(sessionStorage.getItem("pudding-dev-otp") || "");
     } catch {}
   }, []);
@@ -69,7 +66,7 @@ export default function VerifyScreen() {
   }, [toast]);
 
   async function submit() {
-    if (loading || !complete) return;
+    if (loading || resending || !complete) return;
     setLoading(true);
     try {
       await postApi("/api/auth/parent/signup/verify", { code });
@@ -86,12 +83,17 @@ export default function VerifyScreen() {
   }
 
   async function resend() {
-    if (seconds > 0) return;
+    if (resendDisabled) return;
+    setResending(true);
     try {
-      const result = await postApi<{ devOtpCode?: string }>(
+      const result = await postApi<{
+        devOtpCode?: string;
+        delivery: { delivered: boolean };
+      }>(
         "/api/auth/parent/signup/start",
         { email },
       );
+      change("");
       setDevOtp(result.devOtpCode || "");
       try {
         if (result.devOtpCode)
@@ -99,6 +101,9 @@ export default function VerifyScreen() {
         else sessionStorage.removeItem("pudding-dev-otp");
       } catch {}
       setSeconds(WAIT_SECONDS);
+      if (!result.delivery.delivered && !result.devOtpCode) {
+        throw new Error("We couldn’t send a new code. Please try again.");
+      }
       setToast({
         id: Date.now(),
         kind: "success",
@@ -110,6 +115,8 @@ export default function VerifyScreen() {
         kind: "error",
         text: cause instanceof Error ? cause.message : "Unable to resend code",
       });
+    } finally {
+      setResending(false);
     }
   }
 
@@ -134,43 +141,14 @@ export default function VerifyScreen() {
   );
 
   return (
-    <main className="min-h-dvh bg-white">
+    <main
+      className="min-h-dvh bg-white pb-28"
+      style={onKeyboard ? { paddingBottom: offset + 56 } : undefined}
+    >
       <div className="relative w-full bg-white">
         <TopBar backHref="/onboarding/email" />
 
-        <AnimatePresence>
-          {toast && (
-            <div
-              key={toast.id}
-              role="status"
-              className="pointer-events-none absolute inset-x-0 top-[max(20px,env(safe-area-inset-top))] z-20 flex h-11 items-center justify-center"
-            >
-              {/* The icon drops in from the top, then the bar stretches out to the text */}
-              <motion.div
-                initial={{ y: -72, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -72, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 420, damping: 28 }}
-                className="flex items-center rounded-xl bg-black px-3 py-2 text-[15px] leading-[22px] tracking-[-0.15px] text-white"
-              >
-                {toast.kind === "error" ? (
-                  <AlertCircleIcon className="size-6 shrink-0" />
-                ) : (
-                  <TickCircleIcon className="size-6 shrink-0" />
-                )}
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: "auto", opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ delay: 0.25, duration: 0.3, ease: "easeOut" }}
-                  className="overflow-hidden whitespace-nowrap"
-                >
-                  <span className="block pl-2">{toast.text}</span>
-                </motion.div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        <OnboardingToast toast={toast} />
 
         <header className="flex flex-col gap-2 px-4 pb-8 pt-6">
           <h1 className="font-display text-[32px] font-bold leading-[40px] tracking-[-0.64px] text-black">
@@ -248,12 +226,13 @@ export default function VerifyScreen() {
           <button
             type="button"
             onClick={resend}
-            disabled={seconds > 0}
+            disabled={resendDisabled}
+            aria-busy={resending}
             className={`rounded-full px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] bg-[#f3f3f3] ${
-              seconds > 0 ? "text-[#a6a6a6]" : "text-black"
+              resendDisabled ? "text-[#a6a6a6]" : "text-black"
             }`}
           >
-            {seconds > 0 ? `Resend in ${mm}:${ss}` : "Resend code"}
+            {resending ? "Sending…" : seconds > 0 ? `Resend in ${mm}:${ss}` : "Resend code"}
           </button>
         </div>
       </div>
@@ -265,7 +244,7 @@ export default function VerifyScreen() {
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={submit}
-            disabled={!complete && !loading}
+            disabled={!complete || loading || resending}
             aria-busy={loading}
             className={`flex h-[52px] w-full items-center justify-center px-5 py-3.5 ${barText} ${barColor}`}
           >
@@ -278,7 +257,7 @@ export default function VerifyScreen() {
           <button
             type="button"
             onClick={submit}
-            disabled={!complete && !loading}
+            disabled={!complete || loading || resending}
             aria-busy={loading}
             className={`flex h-[52px] w-full items-center justify-center rounded-full px-5 py-3.5 ${barText} ${barColor}`}
           >
