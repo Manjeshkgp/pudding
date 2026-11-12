@@ -1,6 +1,7 @@
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { taskSubmissionPath } from "@/lib/navigation-policy";
 import { dispatchPushToTarget } from "@/services/push.service";
 import { sendAlertEmail } from "@/services/email.service";
 import { sendSms } from "@/services/sms.service";
@@ -231,7 +232,9 @@ export async function notifyWithPush(
     ? `/purchases/${metadata.purchaseId}`
     : metadata?.goalId
       ? `/goals/${metadata.goalId}`
-      : "/inbox";
+      : metadata?.submissionId
+        ? taskSubmissionPath(metadata.submissionId)
+        : "/inbox";
   const common = {
     familyId: input.familyId,
     type: input.type,

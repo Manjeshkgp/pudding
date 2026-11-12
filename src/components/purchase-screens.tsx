@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ListEnd, usePagedList } from "@/components/paged-list";
 import { frequencyLabels, taskFrequencies } from "@/lib/chore-period";
+import { taskSubmissionPath } from "@/lib/navigation-policy";
 import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
 import {
   AppScreen,
@@ -685,9 +686,12 @@ function TaskSubmissions() {
       )}
       {list.items.map((submission) => (
         <Card key={submission.id}>
-          <p className="font-semibold">
+          <Link
+            href={taskSubmissionPath(submission.id)}
+            className="self-start font-semibold underline underline-offset-4"
+          >
             {submission.child.name} · {submission.chore.title}
-          </p>
+          </Link>
           <p className="text-sm text-[#5e5e5e]">
             {
               frequencyLabels[

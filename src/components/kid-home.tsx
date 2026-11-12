@@ -6,8 +6,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRightIcon } from "@/components/icons";
 import { ChildHome, money } from "@/lib/app-types";
-import { useRemote, useAction, Status } from "@/components/app-ui";
-import { useRouter } from "next/navigation";
+import { useRemote, Status } from "@/components/app-ui";
 import PinCard from "@/components/pin-card";
 import { AVATARS } from "@/components/avatar-sheet";
 
@@ -29,32 +28,9 @@ function Sticker({ src, size = 32 }: { src: string; size?: number }) {
   );
 }
 
-function ClockIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="10" cy="10" r="7.5" stroke="#ff9500" strokeWidth="1.8" />
-      <path
-        d="M10 5.8V10l2.8 1.8"
-        stroke="#ff9500"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export default function KidHome() {
-  const router = useRouter();
   const reduceMotion = useReducedMotion();
   const remote = useRemote<ChildHome>("/api/child/home", 10000);
-  const action = useAction();
   const data = remote.data;
   const avatar =
     AVATARS[Number(data?.profile.avatar?.replace("avatar-", "")) - 1] ??
@@ -88,19 +64,7 @@ export default function KidHome() {
       href: "/quest",
     },
   ];
-  const TASKS = (data?.chores || [])
-    .filter((c) => c.recurrence === "DAILY")
-    .slice(0, 3)
-    .map((c) => ({
-      id: c.id,
-      icon: "/kid-home/task-wand.svg",
-      title: c.title,
-      reward: money(c.rewardAmount),
-      submitted: ["PENDING", "APPROVED"].includes(
-        c.latestSubmission?.status || "",
-      ),
-    }));
-  const done = TASKS.filter((t) => t.submitted).map((t) => t.id);
+  const tasks = data?.chores ?? [];
 
   // "Ask me anything" pops up now and then: every 10 seconds, stays for 4.
   const [bubble, setBubble] = useState(false);
@@ -118,7 +82,6 @@ export default function KidHome() {
       window.clearTimeout(hide);
     };
   }, []);
-  const toggle = (id: string) => router.push(`/chores/${id}/proof`);
 
   return (
     <main className="min-h-dvh bg-[#ffc091]">
@@ -231,8 +194,7 @@ export default function KidHome() {
         {/* Cards */}
         <div className="relative z-10 flex flex-col gap-2.5 p-2 pt-[526px]">
           <Status
-            error={remote.error || action.error}
-            notice={action.notice}
+            error={remote.error}
             loading={remote.loading}
           />
           <div className="grid grid-cols-2 gap-3">
@@ -302,71 +264,30 @@ export default function KidHome() {
           </PinCard>
 
           <section className="flex flex-col gap-5 rounded-[32px] bg-white px-5 py-6 drop-shadow-[0px_2px_10px_rgba(0,0,0,0.12)]">
-            <div className="flex items-center justify-between">
-              <span className={`${label15} text-[#a6a6a6]`}>Daily</span>
-              <span className="flex items-center gap-1.5">
-                <ClockIcon />
-                <span className={`${label15} text-[#ff9500]`}>Daily tasks</span>
-              </span>
-            </div>
-            <div className="relative h-5 overflow-hidden rounded-full bg-[#f3f3f3]">
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-[#ff9500]"
-                style={{
-                  width: `${TASKS.length ? (done.length / TASKS.length) * 100 : 0}%`,
-                }}
-              />
-              <span className="absolute inset-0 flex items-center justify-center text-[12px] font-medium leading-4 tracking-[-0.12px] text-white">
-                {done.length}/{TASKS.length}
-              </span>
-            </div>
-            {TASKS.length === 0 && (
-              <p className="text-[#5e5e5e]">
-                No daily tasks yet. Your parent can add one.
-              </p>
+            <h2 className="font-display text-xl font-bold">Tasks to do</h2>
+            {data && tasks.length === 0 && (
+              <p className="text-[#5e5e5e]">You’re all caught up.</p>
             )}
-            <ul className="flex flex-col gap-4">
-              {TASKS.map((t) => (
-                <li key={t.id} className="flex items-center gap-3">
-                  <Sticker src={t.icon} size={32} />
-                  <div className="flex flex-1 flex-col gap-0.5">
-                    <span className="font-display text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">
-                      {t.title}
-                    </span>
-                    <span className={`${label15} text-[#a6a6a6]`}>
-                      {t.reward}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={done.includes(t.id)}
-                    aria-label={`Open evidence for "${t.title}"`}
-                    disabled={t.submitted || action.busy}
-                    onClick={() => toggle(t.id)}
-                    className={`flex size-6 items-center justify-center rounded-md border-2 ${done.includes(t.id) ? "border-black bg-black" : "border-[#a6a6a6]"}`}
-                  >
-                    {done.includes(t.id) && (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="m5 12.5 4.5 4.5L19 7.5"
-                          stroke="#fff"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {tasks.length > 0 && (
+              <ul className="flex flex-col gap-4">
+                {tasks.map((task) => (
+                  <li key={task.id}>
+                    <Link href={`/chores/${task.id}/proof`} className="flex items-center gap-3">
+                      <Sticker src="/kid-home/task-wand.svg" />
+                      <div className="flex flex-1 flex-col gap-0.5">
+                        <span className="font-display text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">
+                          {task.title}
+                        </span>
+                        <span className={`${label15} text-[#5e5e5e]`}>
+                          {money(task.rewardAmount)}
+                        </span>
+                      </div>
+                      <ChevronRightIcon className="size-6 text-[#a6a6a6]" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex items-center justify-center border-t border-[#e8e8e8] pt-4">
               <Link
                 href="/earn"

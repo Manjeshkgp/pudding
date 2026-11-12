@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
         where: {
           familyId: parent?.family.id ?? session.familyId,
           isTemplate: false,
+          deletedAt: null,
           ...(!parent
             ? { isActive: true, assigneeIds: { has: session.sub } }
             : {}),
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
         where: {
           familyId: session.familyId,
           isTemplate: false,
+          deletedAt: null,
           isActive: true,
           assigneeIds: { has: session.sub },
         },
@@ -171,6 +173,7 @@ export async function GET(req: NextRequest) {
       where: {
         familyId: family.id,
         isTemplate: false,
+        deletedAt: null,
         ...(includeInactive ? {} : { isActive: true }),
         ...(childIdParam ? { assigneeIds: { has: childIdParam } } : {}),
       },

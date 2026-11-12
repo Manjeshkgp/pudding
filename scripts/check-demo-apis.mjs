@@ -49,8 +49,11 @@ async function call(cookie, method, path, body, expected = 200) {
     method,
     base + path,
   ];
-  if (body !== undefined)
+  if (body instanceof URLSearchParams) {
+    for (const [name, value] of body) args.push("--form", `${name}=${value}`);
+  } else if (body !== undefined) {
     args.push("-H", "Content-Type: application/json", "--data-binary", "@-");
+  }
   const output = await new Promise((resolve, reject) => {
     const proc = spawn("curl", args);
     let out = "",
@@ -63,7 +66,7 @@ async function call(cookie, method, path, body, expected = 200) {
         ? reject(new Error(`curl failed (${c}): ${err.slice(0, 150)}`))
         : resolve(out),
     );
-    proc.stdin.end(body === undefined ? undefined : JSON.stringify(body));
+    proc.stdin.end(body === undefined || body instanceof URLSearchParams ? undefined : JSON.stringify(body));
   });
   const at = output.lastIndexOf("\n");
   const status = Number(output.slice(at + 1));
@@ -311,18 +314,51 @@ try {
     201,
   );
   const choreId = chore.chore?.id || chore.id;
+  const once = await call(parent, "POST", "/api/chores", {
+    title: "Integration one-time task",
+    rewardAmount: 0,
+    recurrence: "ONCE",
+    assigneeIds: [child.id],
+  }, 201);
+  const taskPreview = await call(childJar, "GET", "/api/child/home");
+  assert(taskPreview.chores.some((task) => task.id === once.id));
+  await call(parent, "DELETE", `/api/chores/${once.id}`);
+  assert(!(await call(childJar, "GET", "/api/child/home")).chores.some((task) => task.id === once.id));
   const { periodStart } = await call(childJar, "GET", `/api/chores/${choreId}`);
+  await call(childJar, "POST", `/api/chores/${choreId}/submit`, { periodStart }, 400);
+  const photoPath = join(temp, "task.png");
+  await writeFile(photoPath, Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM9sAAAAASUVORK5CYII=",
+    "base64",
+  ));
+  const { evidence } = await call(childJar, "POST", `/api/chores/${choreId}/evidence`,
+    new URLSearchParams({ file: `@${photoPath};type=image/png`, periodStart }), 201);
+  const taskProof = { periodStart, afterEvidenceId: evidence.id };
   const submission = await call(
     childJar,
     "POST",
     `/api/chores/${choreId}/submit`,
-    { periodStart },
+    taskProof,
     201,
   );
-  await call(childJar, "POST", `/api/chores/${choreId}/submit`, { periodStart }, 409);
+  const submissionPath = `/api/chore-submissions/${submission.id}`;
+  const detail = await call(parent, "GET", submissionPath);
+  assert.equal(detail.id, submission.id);
+  assert.equal(detail.chore.title, "Integration tidy up");
+  assert.equal(detail.afterEvidenceId, evidence.id);
+  await call(childJar, "GET", submissionPath, undefined, 403);
+  await call(other, "GET", submissionPath, undefined, 404);
+  const inbox = await call(parent, "GET", "/api/notifications");
+  assert.equal(
+    inbox.items.find((item) => item.metadata?.submissionId === submission.id)?.metadata.href,
+    `/approvals/tasks/${submission.id}`,
+  );
+  await call(childJar, "POST", `/api/chores/${choreId}/submit`, taskProof, 409);
+  assert(!(await call(childJar, "GET", "/api/child/home")).chores.some((task) => task.id === choreId));
   await call(parent, "POST", `/api/chore-submissions/${submission.id}/review`, {
     decision: "APPROVE",
   });
+  assert.equal((await call(parent, "GET", submissionPath)).status, "APPROVED");
   await call(parent, "POST", `/api/chore-submissions/${submission.id}/review`, {
     decision: "APPROVE",
     idempotencyKey: key(),
@@ -336,7 +372,7 @@ try {
       await db.wallet.findUniqueOrThrow({ where: { childId: child.id } })
     ).spendBalance.equals("501.40"),
   );
-  await call(childJar, "POST", `/api/chores/${choreId}/submit`, { periodStart }, 409);
+  await call(childJar, "POST", `/api/chores/${choreId}/submit`, taskProof, 409);
   await call(childJar, "POST", `/api/wallets/${child.id}/transfer`, {
     mode: "BETWEEN_BUCKETS",
     amount: 10,

@@ -21,7 +21,7 @@ const submitChoreSchema = z.object({
     .optional()
     .nullable(),
   childNote: z.string().trim().max(300).optional(),
-  beforeEvidenceId: z.string().min(1).optional(),
+  beforeEvidenceId: z.never().optional(),
   afterEvidenceId: z.string().min(1).optional(),
   periodStart: z.string().datetime().optional().nullable(),
 });
@@ -43,6 +43,8 @@ export async function POST(
       await requireParent(req, "canApproveChores");
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, submitChoreSchema);
+    if (session.subjectType === "CHILD" && (!input.afterEvidenceId || input.proofPhotoUrl))
+      throw new ApiError(400, "Take one photo of the finished task.", "CHORE_PHOTO_REQUIRED");
 
     const targetChildId =
       session.subjectType === "CHILD" ? session.sub : input.childId;
@@ -98,46 +100,23 @@ export async function POST(
           "This task is already submitted or approved for this period.",
           "CHORE_ALREADY_SUBMITTED",
         );
-      if (Boolean(input.beforeEvidenceId) !== Boolean(input.afterEvidenceId))
-        throw new ApiError(400, "Provide both before and after photos.");
-      if (input.beforeEvidenceId && input.afterEvidenceId) {
-        const [before, after] = await Promise.all([
-          tx.choreEvidence.findUnique({
-            where: { id: input.beforeEvidenceId },
-          }),
-          tx.choreEvidence.findUnique({ where: { id: input.afterEvidenceId } }),
-        ]);
-        if (
-          !before ||
-          !after ||
-          before.choreId !== chore.id ||
-          after.choreId !== chore.id ||
-          before.childId !== child.id ||
-          after.childId !== child.id ||
-          before.stage !== "BEFORE" ||
-          after.stage !== "AFTER" ||
-          before.createdAt >= after.createdAt
-        )
-          throw new ApiError(
-            400,
-            "Use your own before photo followed by an after photo for this task.",
-            "INVALID_CHORE_EVIDENCE",
-          );
-        if (period && (before.createdAt < period.start || after.createdAt >= period.end))
-          throw new ApiError(409, "Capture both photos during the current task period.", "CHORE_EVIDENCE_EXPIRED");
-        const used = await tx.choreSubmission.count({
-          where: {
-            OR: [
-              { beforeEvidenceId: before.id },
-              { afterEvidenceId: after.id },
-            ],
+      if (input.afterEvidenceId) {
+        const photo = await tx.choreEvidence.findUnique({
+          where: { id: input.afterEvidenceId },
+          select: {
+            choreId: true,
+            childId: true,
+            stage: true,
+            createdAt: true,
+            afterSubmission: { select: { id: true } },
           },
         });
-        if (used)
-          throw new ApiError(
-            409,
-            "These photos have already been submitted. Capture fresh evidence.",
-          );
+        if (!photo || photo.choreId !== chore.id || photo.childId !== child.id || photo.stage !== "AFTER")
+          throw new ApiError(400, "Use your own photo of this task.", "INVALID_CHORE_EVIDENCE");
+        if (period && (photo.createdAt < period.start || photo.createdAt >= period.end))
+          throw new ApiError(409, "Take a fresh photo during the current task period.", "CHORE_EVIDENCE_EXPIRED");
+        if (photo.afterSubmission)
+          throw new ApiError(409, "This photo has already been submitted. Take a fresh photo.");
       }
       return tx.choreSubmission.create({
         data: {
@@ -145,7 +124,6 @@ export async function POST(
           childId: child.id,
           proofPhotoUrl: input.proofPhotoUrl ?? null,
           childNote: input.childNote ?? null,
-          beforeEvidenceId: input.beforeEvidenceId ?? null,
           afterEvidenceId: input.afterEvidenceId ?? null,
           submittedAt,
           status: "PENDING",
@@ -170,13 +148,12 @@ export async function POST(
             : `${child.name} submitted a task`,
         message:
           reviewedSubmission.status === "APPROVED"
-            ? `Gemini supported the visible progress on "${chore.title}". The virtual reward was awarded automatically.`
-            : `${child.name} submitted "${chore.title}" (${chore.rewardAmount.toFixed(2)}). Tap to review the photos and AI assessment.`,
+            ? `Gemini supported the visible result on "${chore.title}". The virtual reward was awarded automatically.`
+            : `${child.name} submitted "${chore.title}" (${chore.rewardAmount.toFixed(2)}). Tap to review the submission and AI assessment.`,
         metadata: {
           choreId: chore.id,
           submissionId: submission.id,
           childId: child.id,
-          href: `/chores/${chore.id}/proof`,
         },
         channel: "IN_APP",
       },
@@ -194,7 +171,7 @@ export async function POST(
         choreId: chore.id,
         choreTitle: chore.title,
         childId: child.id,
-        hasProofPhoto: Boolean(input.proofPhotoUrl),
+        hasProofPhoto: Boolean(input.afterEvidenceId || input.proofPhotoUrl),
       },
       ipAddress,
       userAgent,

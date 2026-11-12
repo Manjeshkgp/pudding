@@ -13,6 +13,7 @@ import {
 } from "@/components/app-ui";
 import { Me } from "@/lib/app-types";
 import { patchApi, requestApi } from "@/lib/client-api";
+import { taskSubmissionPath } from "@/lib/navigation-policy";
 export default function InboxScreen() {
   const me = useRemote<Me>("/api/auth/me");
   const remote = usePagedList<{
@@ -107,7 +108,7 @@ export default function InboxScreen() {
           )}
           {n.metadata?.submissionId && me.data?.subjectType === "USER" && (
             <ActionLink
-              href="/approvals?tab=tasks"
+              href={taskSubmissionPath(n.metadata.submissionId)}
               onClick={() => markOpened(n)}
             >
               Review task

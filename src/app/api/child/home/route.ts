@@ -1,10 +1,66 @@
 import { chorePeriod } from "@/lib/chore-period";
+import { olderThan, pageSize } from "@/lib/list-page";
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/auth-guard";
 import { computeGoalProjection } from "@/services/goals.service";
 import { ensureLessonsAndBadgesSeeded } from "@/services/education.service";
+
+async function upcomingTasks(familyId: string, childId: string) {
+  const now = new Date();
+  const tasks = [];
+  const loadPage = (cursor: { id: string; date: Date } | null) =>
+    prisma.chore.findMany({
+      where: {
+        familyId,
+        isTemplate: false,
+        isActive: true,
+        assigneeIds: { has: childId },
+        ...olderThan("createdAt", cursor),
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardAmount: true,
+        recurrence: true,
+        createdAt: true,
+        submissions: {
+          where: { childId, status: { in: ["PENDING", "APPROVED"] } },
+          orderBy: { submittedAt: "desc" },
+          select: { submittedAt: true },
+          take: 1,
+        },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: pageSize,
+    });
+  let cursor: { id: string; date: Date } | null = null;
+
+  while (tasks.length < 3) {
+    const rows = await loadPage(cursor);
+    for (const chore of rows) {
+      const period = chorePeriod(chore.recurrence, chore.createdAt, now);
+      const submittedAt = chore.submissions[0]?.submittedAt;
+      if (submittedAt && (!period || submittedAt >= period.start)) continue;
+      tasks.push({
+        id: chore.id,
+        title: chore.title,
+        description: chore.description,
+        rewardAmount: chore.rewardAmount.toString(),
+        dueDate: period?.end ?? null,
+        recurrence: chore.recurrence,
+      });
+      if (tasks.length === 3) break;
+    }
+
+    const last = rows.at(-1);
+    if (rows.length < pageSize || !last) break;
+    cursor = { id: last.id, date: last.createdAt };
+  }
+  return tasks;
+}
 
 /**
  * GET /api/child/home
@@ -13,7 +69,7 @@ import { ensureLessonsAndBadgesSeeded } from "@/services/education.service";
  * Returns:
  * - Age band UI mode (`YOUNG_6_9`, `TWEEN_10_13`, `TEEN_14_17`)
  * - Wallet Spend and Save balances
- * - Assigned active chores & pending submissions
+ * - Up to three assigned tasks awaiting submission
  * - Active savings goals with projections
  * - Recent spending requests & upcoming allowance
  * - Gamified streak, XP, level, badges, and optional sibling leaderboard (if enabled by parent FR-11.4)
@@ -81,23 +137,7 @@ export async function GET(req: NextRequest) {
       unreadNotifications,
       siblingLeaderboard,
     ] = await Promise.all([
-      prisma.chore.findMany({
-        where: {
-          familyId: child.familyId,
-          isTemplate: false,
-          isActive: true,
-          assigneeIds: { has: child.id },
-        },
-        include: {
-          submissions: {
-            where: { childId: child.id },
-            orderBy: { submittedAt: "desc" },
-            take: 3,
-          },
-        },
-        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-        take: 15,
-      }),
+      upcomingTasks(child.familyId, child.id),
       prisma.ledgerEntry.findMany({
         where: {
           childId: child.id,
@@ -182,22 +222,7 @@ export async function GET(req: NextRequest) {
             nextRunAt: child.allowanceRules[0].nextRunAt,
           }
         : null,
-      chores: assignedChores.map((c) => ({
-        id: c.id,
-        title: c.title,
-        description: c.description,
-        rewardAmount: c.rewardAmount.toString(),
-        dueDate: chorePeriod(c.recurrence, c.createdAt)?.end ?? null,
-        recurrence: c.recurrence,
-        latestSubmission:
-          c.submissions.find((s) => {
-            const period = chorePeriod(c.recurrence, c.createdAt);
-            return (
-              !period ||
-              (s.submittedAt >= period.start && s.submittedAt < period.end)
-            );
-          }) ?? null,
-      })),
+      chores: assignedChores,
       savingsGoals: goalsWithProjection,
       spendingRequests: child.spendingRequests.map((r) => ({
         id: r.id,

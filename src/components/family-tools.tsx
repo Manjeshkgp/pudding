@@ -19,7 +19,7 @@ import {
   useAction,
 } from "@/components/app-ui";
 import { Kid, Chore, Me, money, readable } from "@/lib/app-types";
-import { postApi, patchApi } from "@/lib/client-api";
+import { deleteApi, postApi, patchApi } from "@/lib/client-api";
 
 type ManagedTask = Chore & {
   assigneeIds: string[];
@@ -219,19 +219,29 @@ export function ChoresScreen() {
           {task.description && (
             <p className="text-sm text-[#5e5e5e]">{task.description}</p>
           )}
-          {canManage && !task.completed && (
+          {canManage && (!task.completed || task.recurrence === "ONCE") && (
             <div className="grid grid-cols-2 gap-2">
-              <Button
-                secondary
-                disabled={kids.loading || action.busy}
-                onClick={() => setEditor(task)}
-              >
-                Edit
-              </Button>
+              {!task.completed && (
+                <Button
+                  secondary
+                  disabled={kids.loading || action.busy}
+                  onClick={() => setEditor(task)}
+                >
+                  Edit
+                </Button>
+              )}
               <Button
                 secondary
                 busy={action.busy}
-                onClick={() =>
+                onClick={() => {
+                  if (task.recurrence === "ONCE") {
+                    if (!window.confirm(`Delete “${task.title}”? Existing submissions will stay in the review history.`)) return;
+                    void action.run(async () => {
+                      await deleteApi(`/api/chores/${task.id}`);
+                      tasks.updateItems((items) => items.filter((item) => item.id !== task.id));
+                    }, "Task deleted.");
+                    return;
+                  }
                   void action.run(
                     async () => {
                       await patchApi(`/api/chores/${task.id}`, {
@@ -246,10 +256,10 @@ export function ChoresScreen() {
                       );
                     },
                     task.isActive ? "Task paused." : "Task resumed.",
-                  )
-                }
+                  );
+                }}
               >
-                {task.isActive ? "Pause" : "Resume"}
+                {task.recurrence === "ONCE" ? "Delete" : task.isActive ? "Pause" : "Resume"}
               </Button>
             </div>
           )}

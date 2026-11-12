@@ -69,10 +69,9 @@ export async function POST(
     )
       throw new ApiError(413, "Photo must be smaller than 512 KB.");
     const form = await readEvidenceForm(req);
-    const file = form.get("file"),
-      stage = form.get("stage");
-    if (!(file instanceof File) || !["BEFORE", "AFTER"].includes(String(stage)))
-      throw new ApiError(400, "Provide a photo and BEFORE or AFTER stage.");
+    const file = form.get("file");
+    if (!(file instanceof File))
+      throw new ApiError(400, "Provide one photo of the finished task.");
     if (file.size < 32 || file.size > MAX_EVIDENCE_BYTES)
       throw new ApiError(413, "Photo must be between 32 bytes and 512 KB.");
     const bytes = Buffer.from(await file.arrayBuffer());
@@ -81,12 +80,12 @@ export async function POST(
     const createdAt = new Date();
     const period = chorePeriod(chore.recurrence, chore.createdAt, createdAt);
     if (period && form.get("periodStart") !== period.start.toISOString())
-      throw new ApiError(409, "This task period has ended or changed. Capture fresh photos for the current task.", "CHORE_PERIOD_CHANGED");
+      throw new ApiError(409, "This task period has ended or changed. Take a fresh photo for the current task.", "CHORE_PERIOD_CHANGED");
     const evidence = await prisma.choreEvidence.create({
       data: {
         choreId: chore.id,
         childId: session.sub,
-        stage: String(stage),
+        stage: "AFTER",
         mimeType: file.type,
         image: bytes,
         sha256: createHash("sha256").update(bytes).digest("hex"),

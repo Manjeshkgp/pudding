@@ -100,7 +100,7 @@ export async function PATCH(
       where: { id },
     });
 
-    if (!existing || existing.familyId !== family.id) {
+    if (!existing || existing.familyId !== family.id || existing.deletedAt) {
       throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
     }
 
@@ -123,8 +123,10 @@ export async function PATCH(
     const updated = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Chore" WHERE "id" = ${id} FOR UPDATE`;
       const current = await tx.chore.findUnique({ where: { id } });
-      if (!current || current.familyId !== family.id)
+      if (!current || current.familyId !== family.id || current.deletedAt)
         throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
+      if (input.isActive !== undefined && (input.recurrence ?? current.recurrence) === "ONCE")
+        throw new ApiError(400, "One-time tasks cannot be paused or resumed.");
       const changesReward =
         input.rewardAmount !== undefined &&
         !current.rewardAmount.equals(input.rewardAmount);
@@ -201,16 +203,24 @@ export async function DELETE(
     const { user, family } = await requireParent(req, "canApproveChores");
     const { ipAddress, userAgent } = getRequestMeta(req);
 
-    const existing = await prisma.chore.findUnique({
-      where: { id },
-    });
-
-    if (!existing || existing.familyId !== family.id) {
-      throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
-    }
-
-    await prisma.chore.delete({
-      where: { id: existing.id },
+    const existing = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Chore" WHERE "id" = ${id} FOR UPDATE`;
+      const chore = await tx.chore.findUnique({ where: { id } });
+      if (!chore || chore.familyId !== family.id || chore.deletedAt)
+        throw new ApiError(404, "Chore not found", "CHORE_NOT_FOUND");
+      const hasSubmissions = await tx.choreSubmission.findFirst({
+        where: { choreId: id },
+        select: { id: true },
+      });
+      if (hasSubmissions) {
+        await tx.chore.update({
+          where: { id },
+          data: { isActive: false, deletedAt: new Date() },
+        });
+      } else {
+        await tx.chore.delete({ where: { id } });
+      }
+      return chore;
     });
 
     await writeAuditLog({

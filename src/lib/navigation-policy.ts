@@ -68,6 +68,10 @@ export function isParentPage(path: string) {
     "/support",
   ].some((p) => path === p || path.startsWith(p + "/"));
 }
+export function taskSubmissionPath(id: string) {
+  return `/approvals/tasks/${encodeURIComponent(id)}`;
+}
+
 export function navigationRedirect(
   state: NavigationState,
   path: string,

@@ -1,6 +1,6 @@
 "use client";
 import { ListEnd, usePagedList } from "@/components/paged-list";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AppScreen,
   Card,
@@ -14,13 +14,7 @@ import { Me, money, readable } from "@/lib/app-types";
 import { taskRewardSplit } from "@/lib/task-reward";
 import { postApi, requestApi } from "@/lib/client-api";
 
-type Evidence = {
-  id: string;
-  stage: string;
-  createdAt: string;
-  beforeSubmission: { id: string } | null;
-  afterSubmission: { id: string } | null;
-};
+type Evidence = { id: string; createdAt: string };
 export type ChoreSubmissionView = {
   id: string;
   status: string;
@@ -43,71 +37,126 @@ export function ChoreEvidenceReview({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm">
-        {readable(s.status)}
+        {s.status === "PENDING" && s.aiStatus !== "REVIEWING"
+          ? "Waiting for parent review"
+          : readable(s.status)}
         {s.approvalSource === "AI" ? " · Automatically rewarded by AI" : ""}
       </p>
       {s.childNote && <p>{s.childNote}</p>}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          ["Before", s.beforeEvidenceId],
-          ["After", s.afterEvidenceId],
-        ].map(([label, id]) => (
-          <div key={label}>
-            <p className="mb-1 text-sm font-semibold">{label}</p>
-            {id ? (
-              <img
-                src={`/api/chore-evidence/${id}`}
-                alt={`${label} task evidence`}
-                loading="lazy"
-                className="aspect-square w-full rounded-2xl object-cover"
-              />
-            ) : (
-              <p className="text-sm text-[#5e5e5e]">No photo</p>
-            )}
-          </div>
-        ))}
-      </div>
-      <p className="text-sm font-semibold">
-        {s.aiStatus === "EVIDENCE_CHECKED" ? "Evidence check" : "Gemini"}:{" "}
-        {s.aiStatus === "REVIEWING"
-          ? "Reviewing photos…"
-          : s.aiStatus === "UNAVAILABLE"
-            ? "Unavailable — parent review needed"
-            : s.aiVerdict
-              ? readable(s.aiVerdict)
-              : "Not reviewed"}
-      </p>
+      {(s.beforeEvidenceId || s.afterEvidenceId) && (
+        <div
+          className={
+            s.beforeEvidenceId && s.afterEvidenceId ? "grid grid-cols-2 gap-3" : undefined
+          }
+        >
+          {[
+            ["Before", s.beforeEvidenceId],
+            [s.beforeEvidenceId ? "After" : "Task photo", s.afterEvidenceId],
+          ].map(([label, id]) =>
+            id && (
+              <div key={label}>
+                <p className="mb-1 text-sm font-semibold">{label}</p>
+                <img
+                  src={`/api/chore-evidence/${id}`}
+                  alt={`${label} task evidence`}
+                  loading="lazy"
+                  className="max-h-80 w-full rounded-2xl object-contain"
+                />
+              </div>
+            ),
+          )}
+        </div>
+      )}
+      {s.aiStatus === "REVIEWING" && <p className="text-sm">Reviewing photo…</p>}
       {s.aiReason && <p className="text-sm">{s.aiReason}</p>}
       {s.rewardAmountPaid && <p>Reward: {money(s.rewardAmountPaid)}</p>}
       {s.parentComment && <p>Parent: {s.parentComment}</p>}
-      <p className="text-xs text-[#5e5e5e]">
-        Photos can support visible progress; they cannot prove who did the work.
-      </p>
     </div>
   );
 }
-async function resizedPhoto(file: File) {
-  if (!file.type.startsWith("image/") || file.size > 12 * 1024 * 1024)
-    throw new Error("Choose a photo smaller than 12 MB.");
-  const bitmap = await createImageBitmap(file);
-  try {
-    const canvas = document.createElement("canvas"),
-      scale = Math.min(1, 960 / Math.max(bitmap.width, bitmap.height));
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Unable to prepare the photo. Please retry.");
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.75),
-    );
-    if (!blob || blob.size > 512 * 1024)
-      throw new Error("Photo is too large. Please take a simpler photo.");
-    return new File([blob], "task.jpg", { type: "image/jpeg" });
-  } finally {
-    bitmap.close();
-  }
+
+async function capturePhoto(video: HTMLVideoElement) {
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Unable to prepare the photo. Please retry.");
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.75),
+  );
+  if (!blob || blob.size > 512 * 1024)
+    throw new Error("Photo is too large. Please retake it.");
+  return blob;
 }
+
+function TaskCamera({
+  busy,
+  onCapture,
+  onClose,
+}: {
+  busy: boolean;
+  onCapture: (video: HTMLVideoElement) => void;
+  onClose: () => void;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const preview = video.current;
+    if (!preview) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Open Pudding on HTTPS or localhost to use your camera.");
+      return;
+    }
+    let active = true;
+    let stream: MediaStream | undefined;
+    void navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    }).then((opened) => {
+      if (active) {
+        stream = opened;
+        preview.srcObject = opened;
+      } else {
+        opened.getTracks().forEach((track) => track.stop());
+      }
+    }).catch(() => {
+      if (active) setError("Camera unavailable. Check your browser permissions and reopen it.");
+    });
+    return () => {
+      active = false;
+      stream?.getTracks().forEach((track) => track.stop());
+      preview.srcObject = null;
+    };
+  }, []);
+
+  return (
+    <>
+      <video
+        ref={video}
+        autoPlay
+        muted
+        playsInline
+        onPlaying={() => setReady(true)}
+        aria-label="Live camera preview"
+        className="aspect-[4/3] w-full rounded-2xl bg-black object-contain"
+      />
+      <Status error={error} loading={!error && !ready} />
+      <div className="grid grid-cols-2 gap-2">
+        <Button secondary disabled={busy} onClick={onClose}>Close camera</Button>
+        <Button busy={busy} disabled={!ready} onClick={() => {
+          if (video.current?.videoWidth) onCapture(video.current);
+        }}>
+          Take photo
+        </Button>
+      </div>
+    </>
+  );
+}
+
 export default function ChoreProofScreen({ id }: { id: string }) {
   const me = useRemote<Me>("/api/auth/me");
   const remote = useRemote<{
@@ -117,67 +166,56 @@ export default function ChoreProofScreen({ id }: { id: string }) {
     isActive: boolean;
     periodStart: string | null;
     periodEndsAt: string | null;
-  }>(`/api/chores/${id}?view=details`, 8000);
+  }>(`/api/chores/${id}?view=details`, 0, true);
   const submissions = usePagedList<ChoreSubmissionView>(
     `/api/chore-submissions?choreId=${encodeURIComponent(id)}`,
   );
-  const photos = useRemote<{ evidence: Evidence[] }>(
-    `/api/chores/${id}/evidence`,
-  );
   const [note, setNote] = useState("");
-  const [localBefore, setBefore] = useState<Evidence | null>(null),
-    [localAfter, setAfter] = useState<Evidence | null>(null);
-  const action = useAction(),
-    parent = me.data?.subjectType === "USER";
+  const [photo, setPhoto] = useState<Evidence | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const action = useAction();
+  const parent = me.data?.subjectType === "USER";
   const periodStart = remote.data?.periodStart;
   const periodEndsAt = remote.data?.periodEndsAt;
+  const reloadTask = remote.reload;
+  useEffect(() => {
+    if (!periodEndsAt) return;
+    const delay = new Date(periodEndsAt).getTime() - Date.now();
+    if (delay > 0 && delay + 50 <= 2_147_483_647) {
+      const timer = window.setTimeout(reloadTask, delay + 50);
+      return () => window.clearTimeout(timer);
+    }
+  }, [periodEndsAt, reloadTask]);
   const inPeriod = (date: string) =>
     !periodStart ||
     (date >= periodStart && (!periodEndsAt || date < periodEndsAt));
-  const before =
-    (localBefore && inPeriod(localBefore.createdAt) ? localBefore : null) ||
-    photos.data?.evidence.find(
-      (e) =>
-        e.stage === "BEFORE" && !e.beforeSubmission && inPeriod(e.createdAt),
-    );
-  const after =
-    (localAfter &&
-    before &&
-    localAfter.createdAt > before.createdAt &&
-    inPeriod(localAfter.createdAt)
-      ? localAfter
-      : null) ||
-    photos.data?.evidence.find(
-      (e) =>
-        e.stage === "AFTER" &&
-        !e.afterSubmission &&
-        inPeriod(e.createdAt) &&
-        before &&
-        e.createdAt > before.createdAt,
-    );
+  const currentPhoto = photo && inPeriod(photo.createdAt) ? photo : null;
   const alreadySubmitted = submissions.items.some(
     (s) =>
       inPeriod(s.submittedAt) && ["PENDING", "APPROVED"].includes(s.status),
   );
-  async function upload(file: File, stage: "BEFORE" | "AFTER") {
-    await action.run(
-      async () => {
-        const form = new FormData();
-        form.set("file", await resizedPhoto(file));
-        form.set("stage", stage);
-        if (periodStart) form.set("periodStart", periodStart);
+  const canSubmit =
+    me.data?.subjectType === "CHILD" &&
+    remote.data?.isActive &&
+    !submissions.loading &&
+    !submissions.error &&
+    !alreadySubmitted;
+  function takePhoto(video: HTMLVideoElement) {
+    void action.run(async () => {
+      const form = new FormData();
+      form.set("file", await capturePhoto(video), "task.jpg");
+      if (periodStart) form.set("periodStart", periodStart);
+      try {
         const result = await requestApi<{ evidence: Evidence }>(
           `/api/chores/${id}/evidence`,
           { method: "POST", body: form },
         );
-        if (stage === "BEFORE") {
-          setBefore(result.evidence);
-          setAfter(null);
-        } else setAfter(result.evidence);
-        photos.reload();
-      },
-      `${stage === "BEFORE" ? "Before" : "After"} photo saved.`,
-    );
+        setPhoto(result.evidence);
+        setCameraOpen(false);
+      } finally {
+        remote.reload();
+      }
+    });
   }
   return (
     <AppScreen
@@ -187,7 +225,7 @@ export default function ChoreProofScreen({ id }: { id: string }) {
     >
       <Status
         loading={remote.loading || me.loading}
-        error={remote.error || photos.error || action.error}
+        error={remote.error || action.error}
         notice={action.notice}
       />
       {remote.data && (
@@ -211,50 +249,41 @@ export default function ChoreProofScreen({ id }: { id: string }) {
           )}
         </Card>
       )}
-      {!parent && remote.data?.isActive && !alreadySubmitted && (
+      {canSubmit && (
         <Card>
-          <h2 className="font-display text-2xl font-bold">
-            Show your progress
-          </h2>
+          <h2 className="font-display text-2xl font-bold">Show your finished task</h2>
           <p>
-            Save a before photo, do the task, then take an after photo. Gemini
-            checks the visible progress. A supported result earns your reward
-            automatically; unclear evidence goes to your parent.
+            Take one photo of the result. If it supports completion, you’ll earn
+            your reward automatically. Otherwise, your parent can review it.
           </p>
           <p className="text-sm text-[#5e5e5e]">
-            Only photograph the task, without people or private details. Photos
-            are shared with Google for review.
+            Keep people and private details out of the photo. Google processes
+            it for review.
           </p>
-          {(["BEFORE", "AFTER"] as const).map((stage) => (
-            <label
-              key={stage}
-              className="flex flex-col gap-2 rounded-3xl bg-[#f5f5f5] p-4"
-            >
-              <span className="font-semibold">
-                {stage === "BEFORE"
-                  ? "1. Before starting"
-                  : "2. After finishing"}
-              </span>
-              {(stage === "BEFORE" ? before : after) && (
+          {cameraOpen ? (
+            <TaskCamera
+              busy={action.busy}
+              onCapture={takePhoto}
+              onClose={() => setCameraOpen(false)}
+            />
+          ) : (
+            <>
+              {currentPhoto && (
                 <img
-                  src={`/api/chore-evidence/${(stage === "BEFORE" ? before : after)?.id}`}
-                  alt={`${stage.toLowerCase()} photo`}
+                  src={`/api/chore-evidence/${currentPhoto.id}`}
+                  alt="Your task photo"
                   className="max-h-48 rounded-2xl object-contain"
                 />
               )}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                disabled={action.busy || (stage === "AFTER" && !before)}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void upload(f, stage);
-                }}
-              />
-            </label>
-          ))}
+              <Button
+                secondary
+                disabled={action.busy}
+                onClick={() => setCameraOpen(true)}
+              >
+                {currentPhoto ? "Retake photo" : "Open camera"}
+              </Button>
+            </>
+          )}
           <Field
             label="What did you do?"
             value={note}
@@ -263,21 +292,18 @@ export default function ChoreProofScreen({ id }: { id: string }) {
           />
           <Button
             busy={action.busy}
-            disabled={!before || !after || !note.trim()}
+            disabled={!currentPhoto || cameraOpen || !note.trim()}
             onClick={() =>
               void action.run(async () => {
                 await postApi(`/api/chores/${id}/submit`, {
-                  beforeEvidenceId: before?.id,
-                  afterEvidenceId: after?.id,
+                  afterEvidenceId: currentPhoto?.id,
                   childNote: note,
                   periodStart,
                 });
-                setBefore(null);
-                setAfter(null);
+                setPhoto(null);
                 setNote("");
                 remote.reload();
                 void submissions.reload();
-                photos.reload();
               }, "Task submitted. See the review below.")
             }
           >
