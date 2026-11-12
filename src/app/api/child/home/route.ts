@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/auth-guard";
+import { purchaseUsage, startOfPurchaseWeek } from "@/lib/purchase-usage";
 
 async function upcomingTasks(familyId: string, childId: string) {
   const now = new Date();
@@ -90,6 +91,7 @@ export async function GET(req: NextRequest) {
           },
         },
         wallet: true,
+        spendingRule: { select: { weeklyLimit: true } },
         allowanceRules: {
           where: { status: "ACTIVE" },
           orderBy: { nextRunAt: "asc" },
@@ -113,7 +115,13 @@ export async function GET(req: NextRequest) {
           ? "TWEEN_10_13"
           : "TEEN_14_17";
 
-    const assignedChores = await upcomingTasks(child.familyId, child.id);
+    const weeklyLimit = child.spendingRule?.weeklyLimit;
+    const [assignedChores, weeklyUsed] = await Promise.all([
+      upcomingTasks(child.familyId, child.id),
+      weeklyLimit == null
+        ? null
+        : purchaseUsage(prisma, child.id, startOfPurchaseWeek(new Date())),
+    ]);
 
     return apiSuccess({
       profile: {
@@ -140,6 +148,14 @@ export async function GET(req: NextRequest) {
             defaultSplitSave: child.wallet.defaultSplitSave,
 
             isFrozen: child.wallet.isFrozen,
+          }
+        : null,
+      weeklySpending: weeklyLimit != null && weeklyUsed != null
+        ? {
+            limit: weeklyLimit.toFixed(2),
+            remaining: weeklyUsed.gte(weeklyLimit)
+              ? "0.00"
+              : weeklyLimit.minus(weeklyUsed).toFixed(2),
           }
         : null,
       upcomingAllowance: child.allowanceRules[0]

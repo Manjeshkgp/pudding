@@ -13,6 +13,7 @@ import {
 import { logger } from "@/lib/logger";
 import { dispatchNotification } from "@/services/notification.service";
 import { isWaitingForParent, purchaseReviewPath } from "@/lib/purchase-review";
+import { purchaseUsage, startOfPurchaseWeek } from "@/lib/purchase-usage";
 import {
   markPurchaseNotificationsReviewed,
   requireOldestParentApproval,
@@ -736,8 +737,7 @@ async function purchaseReviewReason(
   if (daily.equals(0)) return "Your parent reviews every purchase.";
   const day = new Date();
   day.setUTCHours(0, 0, 0, 0);
-  const week = new Date(day);
-  week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
+  const week = startOfPurchaseWeek(day);
   const month = new Date(day);
   month.setUTCDate(1);
   for (const [label, limit, start] of [
@@ -746,18 +746,8 @@ async function purchaseReviewReason(
     ["monthly", rule?.monthlyLimit, month],
   ] as const) {
     if (!limit) continue;
-    const used = await db.purchase.aggregate({
-      where: {
-        childId: p.childId,
-        id: { not: p.id },
-        OR: [
-          { status: "PAID", paidAt: { gte: start } },
-          { status: "PROCESSING" },
-        ],
-      },
-      _sum: { amount: true },
-    });
-    if ((used._sum.amount || new Prisma.Decimal(0)).plus(p.amount).gt(limit))
+    const used = await purchaseUsage(db, p.childId, start, p.id);
+    if (used.plus(p.amount).gt(limit))
       return `This purchase would exceed your ${label} limit. Parent approval is required.`;
   }
   return null;
