@@ -8,7 +8,7 @@ type Tab = "home" | "money" | "tasks";
 
 const TABS: { id: Tab; label: string; icon: string; href?: string }[] = [
   { id: "home", label: "Home", icon: "/kid-home/nav-home.svg", href: "/home" },
-  { id: "money", label: "Money", icon: "/kid-home/nav-money.svg" },
+  { id: "money", label: "Money", icon: "/kid-home/nav-money.svg", href: "/money" },
   { id: "tasks", label: "Earn", icon: "/kid-home/nav-tasks.svg", href: "/earn" },
 ];
 
