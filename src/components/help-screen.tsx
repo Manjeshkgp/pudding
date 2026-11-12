@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CardIcon,
@@ -19,24 +20,32 @@ import { TOPICS } from "@/components/help-content";
 // Help & Support: "Browse your topics". Sample data only.
 const icons = [UserIcon, CardIcon, FileIcon, RefreshIcon, ShieldIcon, GearIcon];
 
-export default function HelpScreen() {
+export default function HelpScreen({ signedIn }: { signedIn: boolean }) {
   const router = useRouter();
   const [logout, setLogout] = useState(false);
   return (
     <main className="min-h-dvh bg-white">
       <ScrollHeader
         title="Help & Support"
-        left={<HelpClose />}
+        left={<HelpClose fallback={signedIn ? "/account" : "/start"} />}
         right={
-          <button
-            type="button"
-            onClick={() => setLogout(true)}
-            className="rounded-full bg-[#fff0ee] px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-[#de1135] transition-colors active:bg-[#ffe3df]"
-          >
-            Logout
-          </button>
+          signedIn ? (
+            <button
+              type="button"
+              onClick={() => setLogout(true)}
+              className="rounded-full bg-[#fff0ee] px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-[#de1135] transition-colors active:bg-[#ffe3df]"
+            >
+              Logout
+            </button>
+          ) : undefined
         }
       />
+
+      <nav aria-label="Help resources" className="flex flex-wrap gap-x-5 gap-y-3 px-4 pb-7 text-[15px] underline">
+        <Link href="/help/faq">FAQs</Link>
+        <Link href="/legal/privacy?returnTo=/help">Privacy Policy</Link>
+        <Link href="/legal/terms?returnTo=/help">User Agreement</Link>
+      </nav>
 
       <h2 className="px-4 pb-7 text-xl font-semibold leading-7 tracking-[-0.15px] text-black">
         Browse your topics
@@ -61,7 +70,7 @@ export default function HelpScreen() {
           );
         })}
       </div>
-      <LogoutSheet open={logout} onClose={() => setLogout(false)} />
+      {signedIn && <LogoutSheet open={logout} onClose={() => setLogout(false)} />}
     </main>
   );
 }

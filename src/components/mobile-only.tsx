@@ -2,7 +2,7 @@ import CryingCat from "@/components/crying-cat";
 
 export default function MobileOnly() {
   return (
-    <div className="fixed inset-0 z-50 hidden flex-col items-center justify-center bg-white px-6 text-black desktop:flex">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-white px-6 py-8 text-black">
       <CryingCat />
 
       <div className="mt-[23px] flex w-full max-w-[576px] flex-col items-start gap-6 text-center">
@@ -16,6 +16,6 @@ export default function MobileOnly() {
           continue exploring.
         </p>
       </div>
-    </div>
+    </main>
   );
 }

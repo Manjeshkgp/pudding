@@ -324,9 +324,6 @@ export default function PlanScreen({ paypalReturn }: { paypalReturn?: string }) 
 
       <div className="fixed inset-x-0 bottom-0 z-10 px-2 pb-[max(32px,env(safe-area-inset-bottom))] pt-4">
         <div className="flex flex-col items-center gap-3 rounded-3xl bg-[#f3f3f3] px-2 py-3">
-          <p className="text-center text-[13px] leading-[18px] tracking-[-0.13px] text-[#5e5e5e]">
-            $0 today, then {subscriptionPlans[selected].billing}. Cancel in PayPal.
-          </p>
           <button
             type="button"
             disabled={action.busy || remote.loading}
