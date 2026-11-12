@@ -8,6 +8,7 @@ import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { requireOnboardingSubscription } from "@/lib/onboarding";
 import prisma from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/jwt";
 
 function getStateSecret(): Uint8Array {
   return getJwtSecretKey();
@@ -39,11 +40,12 @@ interface PayPalUserInfoResponse {
 export async function GET(req: NextRequest) {
   const wantsJson = req.nextUrl.searchParams.get("format") === "json" ||
     req.headers.get("accept")?.includes("application/json");
+  const session = await getSessionFromRequest(req);
   let returnPath = "/paypal";
   function browserResult(result: "connected" | "cancelled" | "error") {
     const response = new NextResponse(null, {
       status: 307,
-      headers: { Location: `${returnPath}?paypal_oauth=${result}` },
+      headers: { Location: session?.subjectType === "USER" ? `${returnPath}?paypal_oauth=${result}` : "/login" },
     });
     response.headers.set("Cache-Control", "private, no-store");
     return response;
