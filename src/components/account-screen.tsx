@@ -12,6 +12,7 @@ import {
 import LogoutSheet from "@/components/logout-sheet";
 import { Me } from "@/lib/app-types";
 import { AVATARS } from "@/components/avatar-sheet";
+import { hasParentPermission } from "@/lib/co-parent-permissions";
 export default function AccountScreen() {
   const remote = useRemote<Me>("/api/auth/me");
   const action = useAction();
@@ -57,6 +58,10 @@ export default function AccountScreen() {
                 Manage children ({me?.family.children?.length || 0})
               </ActionLink>
               <ActionLink href="/coparent">Co-parent</ActionLink>
+              <ActionLink href="/activity">Family activity</ActionLink>
+              {hasParentPermission(me?.user, "canApproveChores") && (
+                <ActionLink href="/chores">Manage tasks</ActionLink>
+              )}
               <ActionLink href="/account/security">Security & PIN</ActionLink>
               <ActionLink href="/account/preferences">
                 Notification preferences

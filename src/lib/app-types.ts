@@ -8,8 +8,9 @@ export type Wallet = {
 export type Kid = {
   id: string;
   name: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  dateOfBirth?: string | null;
   username: string;
   age: number;
   avatar: string;

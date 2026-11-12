@@ -1,16 +1,6 @@
 import { requirePage } from "@/lib/page-auth";
-import { ActivityScreen } from "@/components/purchase-screens";
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string | string[] }>;
-}) {
+import MoneyScreen from "@/components/money-screen";
+export default async function Page() {
   await requirePage("/money");
-  const { tab } = await searchParams;
-  return (
-    <ActivityScreen
-      path="/money"
-      tab={tab === "wallet" ? "wallet" : "purchases"}
-    />
-  );
+  return <MoneyScreen />;
 }

@@ -20,6 +20,10 @@ export async function GET(req: NextRequest) {
     const params = req.nextUrl.searchParams;
     const approvals = params.get("view") === "approvals";
     const status = req.nextUrl.searchParams.get("status");
+    const startDateParam = params.get("startDate");
+    const startDate = startDateParam ? new Date(startDateParam) : null;
+    if (startDate && Number.isNaN(startDate.getTime()))
+      throw new ApiError(400, "Invalid start date.", "INVALID_START_DATE");
     const purchases = await prisma.purchase.findMany({
       where: {
         ...(session.subjectType === "CHILD"
@@ -32,7 +36,10 @@ export async function GET(req: NextRequest) {
               },
             }
           : { status: status || { not: "CREATED" } }),
-        ...olderThan("createdAt", pageCursor(params)),
+        AND: [
+          olderThan("createdAt", pageCursor(params)),
+          ...(startDate ? [{ createdAt: { gte: startDate } }] : []),
+        ],
       },
       include: { child: { select: { name: true } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
