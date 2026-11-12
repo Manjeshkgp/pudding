@@ -1,8 +1,9 @@
+import { reconcilePendingPurchases } from "./purchase-reconciliation.job";
 import cron from "node-cron";
 import { processDueAllowances } from "./allowance.job";
 import { processSavingsInterest } from "./interest.job";
-import { runPayPalReconciliation } from "./reconciliation.job";
 import { runWeeklyDigestJob } from "./weekly-digest.job";
+import { logger } from "@/lib/logger";
 
 const globalForCron = globalThis as unknown as {
   goodspendCronInitialized?: boolean;
@@ -23,12 +24,24 @@ export function initInProcessCronJobs() {
 
   globalForCron.goodspendCronInitialized = true;
 
+  cron.schedule("*/2 * * * *", async () => {
+    try {
+      await reconcilePendingPurchases();
+    } catch (error) {
+      logger.error(
+        "cron.job_failed",
+        { job: "purchase_reconciliation" },
+        error,
+      );
+    }
+  });
+
   // Run allowance check every 15 minutes
   cron.schedule("*/15 * * * *", async () => {
     try {
       await processDueAllowances();
     } catch (err) {
-      console.error("[Cron Error - Allowances]:", err);
+      logger.error("cron.job_failed", { job: "allowances" }, err);
     }
   });
 
@@ -37,16 +50,7 @@ export function initInProcessCronJobs() {
     try {
       await processSavingsInterest();
     } catch (err) {
-      console.error("[Cron Error - Savings Interest]:", err);
-    }
-  });
-
-  // Run daily PayPal ledger reconciliation at 02:00 UTC (INT-4)
-  cron.schedule("0 2 * * *", async () => {
-    try {
-      await runPayPalReconciliation();
-    } catch (err) {
-      console.error("[Cron Error - PayPal Reconciliation]:", err);
+      logger.error("cron.job_failed", { job: "savings_interest" }, err);
     }
   });
 
@@ -55,7 +59,7 @@ export function initInProcessCronJobs() {
     try {
       await runWeeklyDigestJob();
     } catch (err) {
-      console.error("[Cron Error - Weekly Digest]:", err);
+      logger.error("cron.job_failed", { job: "weekly_digest" }, err);
     }
   });
 }

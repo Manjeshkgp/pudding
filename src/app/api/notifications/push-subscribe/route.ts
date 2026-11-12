@@ -3,6 +3,8 @@ import { z } from "zod";
 import { PushPlatform } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/jwt";
+import { getWebPushPublicKey } from "@/services/push.service";
+import { logger } from "@/lib/logger";
 import {
   ApiError,
   apiSuccess,
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
     );
 
     return apiSuccess({
-      vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null,
+      vapidPublicKey: getWebPushPublicKey(),
       totalActive: subscriptions.length,
       webSubscriptions,
       mobileSubscriptions,
@@ -146,6 +148,13 @@ export async function POST(req: NextRequest) {
         isActive: true,
       },
     });
+
+    if (process.env.NODE_ENV === "development" && subscription.platform === "WEB_VAPID") {
+      logger.debug("push.browser_connected", {
+        subscriptionId: subscription.id,
+        accountType: session.subjectType === "USER" ? "parent" : "child",
+      });
+    }
 
     return apiSuccess(
       {

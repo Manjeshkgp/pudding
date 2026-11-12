@@ -1,3 +1,4 @@
+import { olderThan, pageCursor, pageSize, takePage } from "@/lib/list-page";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
@@ -49,7 +50,11 @@ export async function GET(req: NextRequest) {
           select: { id: true },
         });
         if (!child) {
-          throw new ApiError(404, "Child not found in your family", "CHILD_NOT_FOUND");
+          throw new ApiError(
+            404,
+            "Child not found in your family",
+            "CHILD_NOT_FOUND",
+          );
         }
         targetChildIds = [child.id];
       } else {
@@ -64,20 +69,25 @@ export async function GET(req: NextRequest) {
     const goals = await prisma.savingsGoal.findMany({
       where: {
         childId: { in: targetChildIds },
+        ...olderThan("createdAt", pageCursor(req.nextUrl.searchParams)),
         ...(statusParam
           ? { status: statusParam as "ACTIVE" | "COMPLETED" | "WITHDRAWN" }
-          : {}),
+          : req.nextUrl.searchParams.get("view") === "feed"
+            ? { status: { not: "WITHDRAWN" } }
+            : {}),
       },
       include: {
         child: {
           select: { id: true, name: true, avatar: true },
         },
       },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: pageSize + 1,
     });
 
+    const page = takePage(goals, "createdAt");
     const enrichedGoals = await Promise.all(
-      goals.map(async (goal) => {
+      page.items.map(async (goal) => {
         const projection = await computeGoalProjection(goal);
         return {
           id: goal.id,
@@ -100,10 +110,14 @@ export async function GET(req: NextRequest) {
           createdAt: goal.createdAt,
           projection,
         };
-      })
+      }),
     );
 
-    return apiSuccess({ goals: enrichedGoals });
+    return apiSuccess({
+      items: enrichedGoals,
+      goals: enrichedGoals,
+      nextCursor: page.nextCursor,
+    });
   } catch (error) {
     return handleRouteError(error);
   }
@@ -124,7 +138,10 @@ export async function POST(req: NextRequest) {
     const childId = isParent ? input.childId : session.sub;
 
     if (!childId) {
-      throw new ApiError(400, "childId is required when creating a goal as a parent");
+      throw new ApiError(
+        400,
+        "childId is required when creating a goal as a parent",
+      );
     }
 
     const child = await prisma.child.findUnique({
@@ -183,7 +200,7 @@ export async function POST(req: NextRequest) {
         projection,
       },
       201,
-      `Savings goal "${goal.name}" created!`
+      `Savings goal "${goal.name}" created!`,
     );
   } catch (error) {
     return handleRouteError(error);

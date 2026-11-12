@@ -14,30 +14,23 @@ const updateSplitsSchema = z
   .object({
     defaultSplitSpend: z.number().int().min(0).max(100),
     defaultSplitSave: z.number().int().min(0).max(100),
-    defaultSplitGive: z.number().int().min(0).max(100),
   })
-  .refine(
-    (data) =>
-      data.defaultSplitSpend + data.defaultSplitSave + data.defaultSplitGive ===
-      100,
-    {
-      message:
-        "Spend, Save, and Give split percentages must add up to exactly 100%",
-      path: ["defaultSplitSpend"],
-    }
-  );
+  .refine((data) => data.defaultSplitSpend + data.defaultSplitSave === 100, {
+    message: "Spend and Save split percentages must add up to exactly 100%",
+    path: ["defaultSplitSpend"],
+  });
 
 /**
  * PUT /api/wallets/[childId]/splits
- * Parent sets the default Spend/Save/Give split percentages for a child's wallet (FR-3.1).
+ * Parent sets the default Spend and Save split percentages for a child's wallet (FR-3.1).
  */
 export async function PUT(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
-    const { user, family } = await requireParent(req);
+    const { user, family } = await requireParent(req, "canManageAllowances");
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, updateSplitsSchema);
 
@@ -55,7 +48,6 @@ export async function PUT(
       data: {
         defaultSplitSpend: input.defaultSplitSpend,
         defaultSplitSave: input.defaultSplitSave,
-        defaultSplitGive: input.defaultSplitGive,
       },
     });
 
@@ -70,7 +62,6 @@ export async function PUT(
         childId: child.id,
         defaultSplitSpend: updatedWallet.defaultSplitSpend,
         defaultSplitSave: updatedWallet.defaultSplitSave,
-        defaultSplitGive: updatedWallet.defaultSplitGive,
       },
       ipAddress,
       userAgent,
@@ -81,10 +72,9 @@ export async function PUT(
         childId: child.id,
         defaultSplitSpend: updatedWallet.defaultSplitSpend,
         defaultSplitSave: updatedWallet.defaultSplitSave,
-        defaultSplitGive: updatedWallet.defaultSplitGive,
       },
       200,
-      "Default Spend/Save/Give split percentages updated"
+      "Default Spend and Save split percentages updated",
     );
   } catch (error) {
     return handleRouteError(error);

@@ -1,13 +1,10 @@
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { VerificationPurpose } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/jwt";
-import {
-  ApiError,
-  apiSuccess,
-  handleRouteError,
-} from "@/lib/api-response";
+import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import {
   issueVerificationOtp,
   VerificationChannel,
@@ -61,7 +58,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "Target email or phone number is required when not provided by session.",
-        "VALIDATION_ERROR"
+        "VALIDATION_ERROR",
       );
     }
 
@@ -77,7 +74,7 @@ export async function POST(req: NextRequest) {
         throw new ApiError(
           404,
           "No parent account found matching that email or phone.",
-          "USER_NOT_FOUND"
+          "USER_NOT_FOUND",
         );
       }
 
@@ -85,6 +82,11 @@ export async function POST(req: NextRequest) {
       recipientName = existingUser.name;
     }
 
+    enforceRateLimit({
+      key: `verification-send:${userId}:${parsed.purpose}`,
+      limit: 5,
+      windowMs: 900000,
+    });
     const channel: VerificationChannel =
       parsed.purpose === "PHONE_VERIFY" ? "SMS" : parsed.channel;
 

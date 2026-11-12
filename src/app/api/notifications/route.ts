@@ -1,12 +1,13 @@
+import { olderThan, pageCursor, pageSize, takePage } from "@/lib/list-page";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import {
-  apiSuccess,
-  handleRouteError,
-  validateBody,
-} from "@/lib/api-response";
+import { apiSuccess, handleRouteError, validateBody } from "@/lib/api-response";
 import { requireAuth, requireParent } from "@/lib/auth-guard";
+import {
+  countUnreadParentInbox,
+  listParentInbox,
+} from "@/services/parent-inbox.service";
 
 const markNotificationsReadSchema = z.object({
   notificationIds: z.array(z.string().trim().min(1)).optional(),
@@ -30,33 +31,55 @@ export async function GET(req: NextRequest) {
   try {
     const session = await requireAuth(req);
     const unreadOnly = req.nextUrl.searchParams.get("unreadOnly") === "true";
-
-    const where =
+    const cursor = pageCursor(req.nextUrl.searchParams);
+    const childScope = { childId: session.sub };
+    const notifications =
       session.subjectType === "CHILD"
-        ? {
-            childId: session.sub,
-            ...(unreadOnly ? { isRead: false } : {}),
-          }
-        : {
-            familyId: session.familyId,
-            childId: null,
-            ...(unreadOnly ? { isRead: false } : {}),
-          };
+        ? await prisma.notification.findMany({
+            where: {
+              ...childScope,
+              ...(unreadOnly ? { isRead: false } : {}),
+              ...olderThan("createdAt", cursor),
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: pageSize + 1,
+          })
+        : await listParentInbox(
+            session.familyId,
+            session.sub,
+            unreadOnly,
+            cursor,
+          );
 
-    const [notifications, unreadCount] = await Promise.all([
-      prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      }),
-      prisma.notification.count({
-        where: { ...where, isRead: false },
-      }),
-    ]);
+    // Opening the inbox marks the page the user actually received as read.
+    // This also makes push deep-links consistent: opening the purchase review
+    // screen marks its related parent inbox item read in the purchase GET API.
+    const visibleNotifications = notifications.slice(0, pageSize);
+    const unreadIds = visibleNotifications
+      .filter((notification) => !notification.isRead)
+      .map((notification) => notification.id);
+    if (unreadIds.length) {
+      await prisma.notification.updateMany({
+        where: { id: { in: unreadIds }, isRead: false },
+        data: { isRead: true },
+      });
+    }
+
+    const unreadCount =
+      session.subjectType === "CHILD"
+        ? await prisma.notification.count({
+            where: { ...childScope, isRead: false },
+          })
+        : await countUnreadParentInbox(session.familyId, session.sub);
 
     return apiSuccess({
       unreadCount,
-      notifications,
+      ...takePage(notifications, "createdAt"),
+      notifications: visibleNotifications.map((notification) =>
+        unreadIds.includes(notification.id)
+          ? { ...notification, isRead: true }
+          : notification,
+      ),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -75,7 +98,11 @@ export async function PATCH(req: NextRequest) {
     const baseScope =
       session.subjectType === "CHILD"
         ? { childId: session.sub }
-        : { familyId: session.familyId, childId: null };
+        : {
+            familyId: session.familyId,
+            childId: null,
+            OR: [{ userId: null }, { userId: session.sub }],
+          };
 
     if (input.markAllRead) {
       await prisma.notification.updateMany({
@@ -147,7 +174,7 @@ export async function PUT(req: NextRequest) {
           updated.notifyThresholdAmount?.toString() ?? null,
       },
       200,
-      "Notification preferences updated"
+      "Notification preferences updated",
     );
   } catch (error) {
     return handleRouteError(error);

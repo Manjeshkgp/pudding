@@ -6,12 +6,12 @@ import { requireChildOrFamilyParent } from "@/lib/auth-guard";
 
 /**
  * GET /api/wallets/[childId]
- * Child or Parent views the child's Spend/Save/Give wallet balances, recent activity,
+ * Child or Parent views the child's Spend and Save wallet balances, recent activity,
  * and upcoming allowance (FR-3.1, FR-3.2, FR-11.4).
  */
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
@@ -50,13 +50,11 @@ export async function GET(
       throw new ApiError(404, "Child wallet not found", "WALLET_NOT_FOUND");
     }
 
-    const totalBucketBalance = wallet.spendBalance
-      .plus(wallet.saveBalance)
-      .plus(wallet.giveBalance);
+    const totalBucketBalance = wallet.spendBalance.plus(wallet.saveBalance);
 
     const goalsTotal = activeGoals.reduce(
       (acc, g) => acc.plus(g.currentAmount),
-      new Prisma.Decimal(0)
+      new Prisma.Decimal(0),
     );
 
     return apiSuccess({
@@ -69,14 +67,13 @@ export async function GET(
         id: wallet.id,
         spendBalance: wallet.spendBalance.toString(),
         saveBalance: wallet.saveBalance.toString(),
-        giveBalance: wallet.giveBalance.toString(),
-        lockedPendingBalance: wallet.lockedPendingBalance.toString(),
+
         totalBucketBalance: totalBucketBalance.toString(),
         totalInSavingsGoals: goalsTotal.toString(),
         netWorth: totalBucketBalance.plus(goalsTotal).toString(),
         defaultSplitSpend: wallet.defaultSplitSpend,
         defaultSplitSave: wallet.defaultSplitSave,
-        defaultSplitGive: wallet.defaultSplitGive,
+
         isFrozen: wallet.isFrozen,
       },
       upcomingAllowances: upcomingAllowances.map((rule) => ({

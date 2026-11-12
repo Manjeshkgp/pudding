@@ -1,4 +1,7 @@
+import { assertSignupGuest } from "@/lib/parent-signup";
 import { NextRequest } from "next/server";
+import { coParentNameFields, validateNameParts } from "@/lib/coparent-name";
+import { isInviteExpired } from "@/lib/coparent-invite";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -12,19 +15,21 @@ import {
 import { setSessionCookie, signSessionToken } from "@/lib/jwt";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
-const acceptInviteSchema = z.object({
-  inviteToken: z.string().trim().min(10, "Valid invite token is required"),
-  name: z.string().trim().min(2).max(100).optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+?[0-9]{7,15}$/, "Invalid phone number")
-    .optional(),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .max(100),
-});
+const acceptInviteSchema = z
+  .object({
+    inviteToken: z.string().trim().min(10, "Valid invite token is required"),
+    ...coParentNameFields,
+    phone: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9]{7,15}$/, "Invalid phone number")
+      .optional(),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .max(100),
+  })
+  .superRefine(validateNameParts);
 
 /**
  * POST /api/family/co-parents/accept
@@ -33,6 +38,7 @@ const acceptInviteSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   try {
+    await assertSignupGuest(req);
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, acceptInviteSchema);
 
@@ -45,23 +51,20 @@ export async function POST(req: NextRequest) {
       throw new ApiError(404, "Invalid invitation token", "INVITE_NOT_FOUND");
     }
 
+    if (
+      invite.status === "EXPIRED" ||
+      (invite.status === "PENDING" && isInviteExpired(invite))
+    )
+      throw new ApiError(
+        410,
+        "This invitation expired. Ask the primary parent to resend it.",
+        "INVITE_EXPIRED",
+      );
     if (invite.status !== "PENDING") {
       throw new ApiError(
         409,
         `Invitation is no longer active (status: ${invite.status})`,
-        "INVITE_NOT_PENDING"
-      );
-    }
-
-    if (invite.expiresAt < new Date()) {
-      await prisma.coParentInvite.update({
-        where: { id: invite.id },
-        data: { status: "EXPIRED" },
-      });
-      throw new ApiError(
-        410,
-        "This invitation has expired. Ask the primary parent to send a new invite.",
-        "INVITE_EXPIRED"
+        "INVITE_NOT_PENDING",
       );
     }
 
@@ -74,21 +77,43 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         409,
         "An account with this email already exists",
-        "EMAIL_ALREADY_EXISTS"
+        "EMAIL_ALREADY_EXISTS",
       );
     }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
 
     const coParent = await prisma.$transaction(async (tx) => {
+      // Match the lock order used by creation and resend.
+      await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${invite.familyId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "CoParentInvite" WHERE "id" = ${invite.id} FOR UPDATE`;
+      const fresh = await tx.coParentInvite.findUniqueOrThrow({
+        where: { id: invite.id },
+      });
+      if (fresh.status !== "PENDING")
+        throw new ApiError(409, "This invitation is no longer active.");
+      if (isInviteExpired(fresh))
+        throw new ApiError(
+          410,
+          "This invitation expired. Ask the primary parent to resend it.",
+          "INVITE_EXPIRED",
+        );
+      const firstName = input.firstName ?? fresh.firstName;
+      const lastName = input.lastName ?? fresh.lastName;
       const createdUser = await tx.user.create({
         data: {
           familyId: invite.familyId,
           email: invite.email,
-          name: input.name || invite.name,
+          name:
+            firstName && lastName
+              ? `${firstName} ${lastName}`
+              : input.name || fresh.name,
+          firstName,
+          lastName,
           phone: input.phone ?? null,
           passwordHash,
           role: "CO_PARENT",
+          onboardingCompletedAt: new Date(),
           permissionLevel: invite.permissionLevel,
           permissions: invite.permissions
             ? (invite.permissions as Prisma.InputJsonValue)
@@ -132,7 +157,7 @@ export async function POST(req: NextRequest) {
           ipAddress,
           userAgent,
         },
-        tx
+        tx,
       );
 
       return createdUser;
@@ -167,12 +192,45 @@ export async function POST(req: NextRequest) {
         },
       },
       201,
-      "Co-parent invitation accepted and account created"
+      "Co-parent invitation accepted and account created",
     );
 
     setSessionCookie(response, token, "USER");
     return response;
   } catch (error) {
     return handleRouteError(error);
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const token = req.nextUrl.searchParams.get("token");
+    if (!token || token.length < 10)
+      throw new ApiError(400, "Open a valid invitation link.");
+    const invite = await prisma.coParentInvite.findUnique({
+      where: { inviteToken: token },
+      include: { family: { select: { name: true } } },
+    });
+    if (!invite) throw new ApiError(404, "Invitation not found.");
+    if (
+      invite.status === "EXPIRED" ||
+      (invite.status === "PENDING" && isInviteExpired(invite))
+    )
+      throw new ApiError(
+        410,
+        "This invitation expired. Ask the primary parent to resend it.",
+        "INVITE_EXPIRED",
+      );
+    if (invite.status !== "PENDING")
+      throw new ApiError(410, "This invitation is no longer available.");
+    return apiSuccess({
+      name: invite.name,
+      firstName: invite.firstName,
+      lastName: invite.lastName,
+      familyName: invite.family.name,
+      permissionLevel: invite.permissionLevel,
+    });
+  } catch (e) {
+    return handleRouteError(e);
   }
 }

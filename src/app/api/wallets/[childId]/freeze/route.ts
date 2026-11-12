@@ -22,11 +22,11 @@ const freezeWalletSchema = z.object({
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ childId: string }> }
+  context: { params: Promise<{ childId: string }> },
 ) {
   try {
     const { childId } = await context.params;
-    const { user, family } = await requireParent(req);
+    const { user, family } = await requireParent(req, "canManageChildren");
     const { ipAddress, userAgent } = getRequestMeta(req);
     const input = await validateBody(req, freezeWalletSchema);
 
@@ -73,7 +73,7 @@ export async function POST(
           ipAddress,
           userAgent,
         },
-        tx
+        tx,
       );
 
       return wallet;
@@ -88,7 +88,7 @@ export async function POST(
       200,
       input.isFrozen
         ? `${child.name}'s spending wallet has been frozen`
-        : `${child.name}'s spending wallet has been unfrozen`
+        : `${child.name}'s spending wallet has been unfrozen`,
     );
   } catch (error) {
     return handleRouteError(error);

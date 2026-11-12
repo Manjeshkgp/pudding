@@ -89,8 +89,10 @@ export async function issueVerificationOtp(params: {
     purpose: params.purpose,
     expiresAt: tokenRecord.expiresAt,
     delivery: deliveryResult,
-    // Expose devOtpCode unless explicitly disabled so local dev & E2E verification can read the OTP
-    ...(process.env.EXPOSE_DEV_OTP !== "false" ? { devOtpCode: otpCode } : {}),
+    // Expose codes only in non-production environments unless explicitly disabled.
+    ...(process.env.NODE_ENV !== "production" && process.env.EXPOSE_DEV_OTP !== "false"
+      ? { devOtpCode: otpCode }
+      : {}),
   };
 }
 

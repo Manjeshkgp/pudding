@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from "cloudinary";
 import { ApiError } from "./api-response";
+import { logger } from "./logger";
 
 let isConfigured = false;
 
@@ -71,7 +72,7 @@ export async function uploadImageToCloudinary(
       format: result.format,
     };
   } catch (err) {
-    console.error("[Cloudinary Upload Error]:", err);
+    logger.error("upload.image_failed", { provider: "cloudinary" }, err);
     throw new ApiError(
       502,
       "Failed to upload image to Cloudinary",

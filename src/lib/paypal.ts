@@ -31,7 +31,7 @@ function getPayPalCredentials(): { clientId: string; clientSecret: string } {
     throw new ApiError(
       500,
       "PayPal API credentials (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET) are not configured in .env",
-      "PAYPAL_CREDENTIALS_MISSING"
+      "PAYPAL_CREDENTIALS_MISSING",
     );
   }
 
@@ -52,7 +52,7 @@ export async function getPayPalAccessToken(): Promise<string> {
   const { clientId, clientSecret } = getPayPalCredentials();
   const baseUrl = getPayPalApiBaseUrl();
   const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
-    "base64"
+    "base64",
   );
 
   const response = await fetchWithRetry(`${baseUrl}/v1/oauth2/token`, {
@@ -70,7 +70,7 @@ export async function getPayPalAccessToken(): Promise<string> {
       502,
       "Failed to authenticate with PayPal OAuth2 API",
       "PAYPAL_AUTH_FAILED",
-      errText
+      errText,
     );
   }
 
@@ -93,12 +93,15 @@ export async function getPayPalAccessToken(): Promise<string> {
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
-  maxRetries = 3
+  maxRetries = 3,
 ): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const res = await fetch(url, init);
+      const res = await fetch(url, {
+        ...init,
+        signal: init.signal || AbortSignal.timeout(15000),
+      });
       if (res.status < 500 || attempt === maxRetries - 1) {
         return res;
       }
@@ -116,7 +119,7 @@ async function fetchWithRetry(
     503,
     "PayPal service is temporarily unreachable. Please retry in a moment.",
     "PAYPAL_OUTAGE",
-    lastError instanceof Error ? lastError.message : undefined
+    lastError instanceof Error ? lastError.message : undefined,
   );
 }
 
@@ -166,7 +169,7 @@ export interface PayPalOrderResponse {
  * Carries `PayPal-Request-Id` idempotency header (INT-2).
  */
 export async function createPayPalPayeeOrder(
-  input: CreatePayPalPayeeOrderInput
+  input: CreatePayPalPayeeOrderInput,
 ): Promise<PayPalOrderResponse> {
   const accessToken = await getPayPalAccessToken();
   const baseUrl = getPayPalApiBaseUrl();
@@ -192,10 +195,11 @@ export async function createPayPalPayeeOrder(
       },
     ],
     application_context: {
-      brand_name: "GoodSpend Family Wallet",
+      brand_name: "Pudding Family Wallet",
       shipping_preference: "NO_SHIPPING",
       user_action: "PAY_NOW",
-      return_url: input.returnUrl || `${appUrl}/parent/approvals?paypal=success`,
+      return_url:
+        input.returnUrl || `${appUrl}/parent/approvals?paypal=success`,
       cancel_url: input.cancelUrl || `${appUrl}/parent/approvals?paypal=cancel`,
     },
   };
@@ -216,7 +220,7 @@ export async function createPayPalPayeeOrder(
       502,
       "Failed to create PayPal order for recipient",
       "PAYPAL_CREATE_ORDER_FAILED",
-      errBody
+      errBody,
     );
   }
 
@@ -229,7 +233,7 @@ export async function createPayPalPayeeOrder(
  */
 export async function capturePayPalOrder(
   paypalOrderId: string,
-  idempotencyKey: string
+  idempotencyKey: string,
 ): Promise<PayPalOrderResponse> {
   const accessToken = await getPayPalAccessToken();
   const baseUrl = getPayPalApiBaseUrl();
@@ -243,7 +247,7 @@ export async function capturePayPalOrder(
         "Content-Type": "application/json",
         "PayPal-Request-Id": idempotencyKey,
       },
-    }
+    },
   );
 
   if (!response.ok) {
@@ -252,7 +256,7 @@ export async function capturePayPalOrder(
       502,
       "PayPal order capture failed",
       "PAYPAL_CAPTURE_FAILED",
-      errBody
+      errBody,
     );
   }
 
@@ -263,7 +267,7 @@ export async function capturePayPalOrder(
  * Fetches the current details of a PayPal Order v2 (used for daily reconciliation INT-4).
  */
 export async function getPayPalOrderDetails(
-  paypalOrderId: string
+  paypalOrderId: string,
 ): Promise<PayPalOrderResponse> {
   const accessToken = await getPayPalAccessToken();
   const baseUrl = getPayPalApiBaseUrl();
@@ -276,7 +280,7 @@ export async function getPayPalOrderDetails(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-    }
+    },
   );
 
   if (!response.ok) {
@@ -285,109 +289,11 @@ export async function getPayPalOrderDetails(
       502,
       `Failed to fetch PayPal order ${paypalOrderId}`,
       "PAYPAL_GET_ORDER_FAILED",
-      errBody
+      errBody,
     );
   }
 
   return (await response.json()) as PayPalOrderResponse;
-}
-
-export interface PayPalCaptureDetailsResponse {
-  id: string;
-  status:
-    | "COMPLETED"
-    | "DECLINED"
-    | "PARTIALLY_REFUNDED"
-    | "PENDING"
-    | "REFUNDED"
-    | "FAILED";
-  status_details?: { reason?: string };
-  amount?: { currency_code: string; value: string };
-  custom_id?: string;
-  supplementary_data?: {
-    related_ids?: {
-      order_id?: string;
-    };
-  };
-}
-
-export interface PayPalRefundDetailsResponse {
-  id: string;
-  status: "CANCELLED" | "FAILED" | "PENDING" | "COMPLETED";
-  amount?: { currency_code: string; value: string };
-  custom_id?: string;
-  seller_payable_breakdown?: {
-    gross_amount?: { currency_code: string; value: string };
-    total_refunded_amount?: { currency_code: string; value: string };
-  };
-}
-
-/**
- * Fetches a specific PayPal Capture v2 resource (`GET /v2/payments/captures/{capture_id}`)
- * for fail-closed verification of capture webhooks.
- */
-export async function getPayPalCaptureDetails(
-  captureId: string
-): Promise<PayPalCaptureDetailsResponse> {
-  const accessToken = await getPayPalAccessToken();
-  const baseUrl = getPayPalApiBaseUrl();
-
-  const response = await fetchWithRetry(
-    `${baseUrl}/v2/payments/captures/${encodeURIComponent(captureId)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new ApiError(
-      502,
-      `Failed to fetch PayPal capture ${captureId}`,
-      "PAYPAL_GET_CAPTURE_FAILED",
-      errBody
-    );
-  }
-
-  return (await response.json()) as PayPalCaptureDetailsResponse;
-}
-
-/**
- * Fetches a specific PayPal Refund v2 resource (`GET /v2/payments/refunds/{refund_id}`)
- * to cryptographically & authoritatively confirm refund ID, status, and gross refunded amount.
- */
-export async function getPayPalRefundDetails(
-  refundId: string
-): Promise<PayPalRefundDetailsResponse> {
-  const accessToken = await getPayPalAccessToken();
-  const baseUrl = getPayPalApiBaseUrl();
-
-  const response = await fetchWithRetry(
-    `${baseUrl}/v2/payments/refunds/${encodeURIComponent(refundId)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new ApiError(
-      502,
-      `Failed to fetch PayPal refund ${refundId}`,
-      "PAYPAL_GET_REFUND_FAILED",
-      errBody
-    );
-  }
-
-  return (await response.json()) as PayPalRefundDetailsResponse;
 }
 
 export interface VerifyWebhookHeaders {
@@ -404,7 +310,7 @@ export interface VerifyWebhookHeaders {
  */
 export async function verifyPayPalWebhookSignature(
   headers: VerifyWebhookHeaders,
-  rawWebhookEvent: Record<string, unknown>
+  rawWebhookEvent: Record<string, unknown>,
 ): Promise<boolean> {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID;
 
@@ -412,7 +318,7 @@ export async function verifyPayPalWebhookSignature(
     throw new ApiError(
       500,
       "PAYPAL_WEBHOOK_ID is not configured in .env",
-      "PAYPAL_WEBHOOK_ID_MISSING"
+      "PAYPAL_WEBHOOK_ID_MISSING",
     );
   }
 
@@ -446,7 +352,7 @@ export async function verifyPayPalWebhookSignature(
         webhook_id: webhookId,
         webhook_event: rawWebhookEvent,
       }),
-    }
+    },
   );
 
   if (!response.ok) {

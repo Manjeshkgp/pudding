@@ -3,6 +3,7 @@ import {
   renderNotificationEmailHtml,
   renderWeeklyDigestEmailHtml,
 } from "@/email/templates";
+import { logger } from "@/lib/logger";
 
 export interface SendEmailPayload {
   to: string | string[];
@@ -24,17 +25,33 @@ export interface SendEmailResult {
  * it gracefully logs the email and returns structured status so flows never crash.
  */
 export async function sendEmail(
-  payload: SendEmailPayload
+  payload: SendEmailPayload,
 ): Promise<SendEmailResult> {
+  // Keep all outbound mail disabled outside production. Local signup and
+  // verification flows expose their development OTP through the API instead.
+  if (process.env.NODE_ENV !== "production") {
+    logger.info("email.delivery_skipped", {
+      provider: "resend",
+      outcome: "disabled_outside_production",
+      recipientCount: Array.isArray(payload.to) ? payload.to.length : 1,
+    });
+    return {
+      delivered: false,
+      provider: "CONSOLE_FALLBACK",
+      error: "Email delivery is disabled outside production",
+    };
+  }
+
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const fromEmail =
     process.env.RESEND_FROM_EMAIL?.trim() ||
-    "GoodSpend <noreply@goodspend.manjesh.co.in>";
+    "Pudding <noreply@goodspend.manjesh.co.in>";
 
   if (!apiKey || apiKey === "your-resend-api-key") {
-    console.info("[EmailService:CONSOLE_FALLBACK]", {
-      to: payload.to,
-      subject: payload.subject,
+    logger.warn("email.provider_unconfigured", {
+      provider: "resend",
+      outcome: "console_fallback",
+      recipientCount: Array.isArray(payload.to) ? payload.to.length : 1,
     });
     return {
       delivered: false,
@@ -66,10 +83,9 @@ export async function sendEmail(
     };
 
     if (!response.ok) {
-      console.warn("[EmailService:RESEND_WARN]", {
-        status: response.status,
-        to: payload.to,
-        error: data?.message || response.statusText,
+      logger.warn("email.send_failed", {
+        provider: "resend",
+        httpStatus: response.status,
       });
       return {
         delivered: false,
@@ -85,7 +101,7 @@ export async function sendEmail(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown email error";
-    console.error("[EmailService:ERROR]", message);
+    logger.error("email.send_exception", { provider: "resend" }, err);
     return {
       delivered: false,
       provider: "RESEND",
@@ -111,9 +127,9 @@ export async function sendOtpEmail(params: {
 
   return sendEmail({
     to: params.to,
-    subject: `${params.otpCode} is your GoodSpend ${params.purposeLabel} code`,
+    subject: `${params.otpCode} is your Pudding ${params.purposeLabel} code`,
     html,
-    text: `Your GoodSpend ${params.purposeLabel} code is ${params.otpCode}. It expires in ${expiresInMinutes} minutes.`,
+    text: `Your Pudding ${params.purposeLabel} code is ${params.otpCode}. It expires in ${expiresInMinutes} minutes.`,
   });
 }
 
@@ -128,7 +144,7 @@ export async function sendAlertEmail(params: {
   const html = renderNotificationEmailHtml(params);
   return sendEmail({
     to: params.to,
-    subject: `GoodSpend: ${params.title}`,
+    subject: `Pudding: ${params.title}`,
     html,
     text: `${params.title}\n\n${params.body}`,
   });
@@ -144,15 +160,13 @@ export async function sendWeeklyDigestEmail(params: {
     totalEarned: string;
     totalSpent: string;
     totalSaved: string;
-    totalDonated: string;
     choresCompleted: number;
-    lessonsCompleted: number;
   }>;
 }): Promise<SendEmailResult> {
   const html = renderWeeklyDigestEmailHtml(params);
   return sendEmail({
     to: params.to,
-    subject: `GoodSpend Weekly Family Digest (${params.weekLabel})`,
+    subject: `Pudding Weekly Family Digest (${params.weekLabel})`,
     html,
   });
 }

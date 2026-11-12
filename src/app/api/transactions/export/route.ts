@@ -37,7 +37,7 @@ function buildSimplePdfReport(
     amount: string;
     status: string;
     description: string;
-  }>
+  }>,
 ): Buffer {
   const escapePdfText = (txt: string) =>
     txt
@@ -47,7 +47,7 @@ function buildSimplePdfReport(
       .replace(/[^\x20-\x7E]/g, "");
 
   const lines: string[] = [
-    `GoodSpend Transaction Statement - ${familyName}`,
+    `Pudding Transaction Statement - ${familyName}`,
     `Generated: ${new Date().toISOString().slice(0, 10)} | Currency: ${currency}`,
     "--------------------------------------------------------------------------------",
     "Date       | Child        | Bucket        | Dir    | Amount    | Status    | Description",
@@ -104,13 +104,13 @@ export async function GET(req: NextRequest) {
     ).toLowerCase();
     const childIdParam = req.nextUrl.searchParams.get("childId");
     const typeParam = req.nextUrl.searchParams.get(
-      "type"
+      "type",
     ) as LedgerEntryType | null;
     const bucketParam = req.nextUrl.searchParams.get(
-      "bucket"
+      "bucket",
     ) as WalletBucket | null;
     const statusParam = req.nextUrl.searchParams.get(
-      "status"
+      "status",
     ) as LedgerStatus | null;
     const startDateParam = req.nextUrl.searchParams.get("startDate");
     const endDateParam = req.nextUrl.searchParams.get("endDate");
@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
       const pdfBuffer = buildSimplePdfReport(
         family.name,
         family.currency,
-        formattedRows
+        formattedRows,
       );
 
       return new NextResponse(new Uint8Array(pdfBuffer), {
@@ -204,7 +204,7 @@ export async function GET(req: NextRequest) {
           escapeCsvCell(r.status),
           escapeCsvCell(r.paypalOrderId),
           escapeCsvCell(r.description),
-        ].join(",")
+        ].join(","),
       ),
     ];
 

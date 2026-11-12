@@ -37,7 +37,7 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
 
     const childrenSummaries = await Promise.all(
       family.children.map(async (child) => {
-        const [ledgerEntries, choresCompleted, lessonsCompleted] =
+        const [ledgerEntries, choresCompleted] =
           await Promise.all([
             prisma.ledgerEntry.findMany({
               where: {
@@ -53,18 +53,11 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
                 reviewedAt: { gte: sevenDaysAgo },
               },
             }),
-            prisma.lessonProgress.count({
-              where: {
-                childId: child.id,
-                completedAt: { gte: sevenDaysAgo },
-              },
-            }),
           ]);
 
         let earned = 0;
         let spent = 0;
         let saved = 0;
-        let donated = 0;
 
         for (const entry of ledgerEntries) {
           const amt = Number(entry.amount);
@@ -85,8 +78,6 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
             spent += amt;
           } else if (entry.type === "GOAL_DEPOSIT") {
             saved += amt;
-          } else if (entry.type === "DONATION") {
-            donated += amt;
           }
         }
 
@@ -95,11 +86,9 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
           totalEarned: earned.toFixed(2),
           totalSpent: spent.toFixed(2),
           totalSaved: saved.toFixed(2),
-          totalDonated: donated.toFixed(2),
           choresCompleted,
-          lessonsCompleted,
         };
-      })
+      }),
     );
 
     for (const parent of family.parents) {
@@ -110,7 +99,7 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
       const summaryBody = childrenSummaries
         .map(
           (c) =>
-            `${c.childName}: Earned $${c.totalEarned}, Spent $${c.totalSpent}, Saved $${c.totalSaved}, Chores ${c.choresCompleted}`
+            `${c.childName}: Earned $${c.totalEarned}, Spent $${c.totalSpent}, Saved $${c.totalSaved}, Chores ${c.choresCompleted}`,
         )
         .join(" | ");
 

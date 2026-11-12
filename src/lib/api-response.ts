@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError, ZodSchema } from "zod";
+import { logger } from "./logger";
 
 export class ApiError extends Error {
   public readonly statusCode: number;
@@ -74,6 +75,14 @@ export async function validateBody<S extends ZodSchema>(
 
 export function handleRouteError(error: unknown) {
   if (error instanceof ApiError) {
+    if (error.statusCode >= 500) {
+      logger.error("api.request_failed", {
+        httpStatus: error.statusCode,
+        errorCode: error.code,
+        errorName: error.name,
+        details: error.details,
+      });
+    }
     return apiError(
       error.statusCode,
       error.message,
@@ -91,7 +100,11 @@ export function handleRouteError(error: unknown) {
     );
   }
 
-  console.error("[API Unhandled Error]:", error);
+  logger.error(
+    "api.unhandled_error",
+    { errorCode: "INTERNAL_SERVER_ERROR" },
+    error
+  );
   return apiError(
     500,
     "An unexpected server error occurred",

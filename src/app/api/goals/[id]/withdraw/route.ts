@@ -1,3 +1,4 @@
+import { notifyWithPush } from "@/services/notification.service";
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -25,7 +26,7 @@ const withdrawGoalSchema = z.object({
  */
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: goalId } = await context.params;
@@ -42,12 +43,12 @@ export async function POST(
 
     const { session, child, isParent } = await requireChildOrFamilyParent(
       req,
-      goal.childId
+      goal.childId,
     );
 
     if (!isParent && goal.isLocked && !goal.unlockApprovedByParent) {
       // Notify parent that child requested goal unlock (FR-6.6)
-      await prisma.notification.create({
+      await notifyWithPushRecord({
         data: {
           familyId: child.familyId,
           type: "GOAL_UNLOCK_REQUESTED",
@@ -61,19 +62,7 @@ export async function POST(
       throw new ApiError(
         403,
         "This savings goal is locked until your parent approves withdrawal (FR-6.6). We notified your parent!",
-        "GOAL_LOCKED_PENDING_PARENT"
-      );
-    }
-
-    const withdrawAmount = input.amount
-      ? new Prisma.Decimal(input.amount).toDecimalPlaces(2)
-      : goal.currentAmount;
-
-    if (withdrawAmount.lte(0) || withdrawAmount.gt(goal.currentAmount)) {
-      throw new ApiError(
-        400,
-        `Invalid withdrawal amount. Goal has $${goal.currentAmount.toFixed(2)} available.`,
-        "INVALID_WITHDRAWAL_AMOUNT"
+        "GOAL_LOCKED_PENDING_PARENT",
       );
     }
 
@@ -82,10 +71,61 @@ export async function POST(
       req.headers.get("x-idempotency-key") ||
       `goal-withdraw:${goal.id}:${Date.now()}`;
 
+    const previous = await prisma.ledgerEntry.findUnique({
+      where: { idempotencyKey },
+    });
+    if (previous) {
+      if (previous.childId !== child.id || previous.referenceId !== goal.id)
+        throw new ApiError(409, "Request key already used.");
+      return apiSuccess({
+        goal,
+        wallet: await prisma.wallet.findUniqueOrThrow({
+          where: { childId: child.id },
+        }),
+        idempotentReplay: true,
+      });
+    }
+    const withdrawAmount = input.amount
+      ? new Prisma.Decimal(input.amount).toDecimalPlaces(2)
+      : goal.currentAmount;
+
+    if (withdrawAmount.lte(0) || withdrawAmount.gt(goal.currentAmount)) {
+      throw new ApiError(
+        400,
+        `Invalid withdrawal amount. Goal has $${goal.currentAmount.toFixed(2)} available.`,
+        "INVALID_WITHDRAWAL_AMOUNT",
+      );
+    }
+
     const bucketField =
       input.destinationBucket === "SPEND" ? "spendBalance" : "saveBalance";
 
     const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${child.familyId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "SavingsGoal" WHERE "id" = ${goalId} FOR UPDATE`;
+      const goal = await tx.savingsGoal.findUniqueOrThrow({
+        where: { id: goalId },
+      });
+      const replay = await tx.ledgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        if (replay.childId !== child.id || replay.referenceId !== goalId)
+          throw new ApiError(409, "Request key already used.");
+        return {
+          updatedGoal: goal,
+          updatedWallet: await tx.wallet.findUniqueOrThrow({
+            where: { childId: child.id },
+          }),
+        };
+      }
+      if (goal.currentAmount.lt(withdrawAmount))
+        throw new ApiError(
+          409,
+          "The savings amount changed. Refresh and try again.",
+        );
+      if (!isParent && goal.isLocked && !goal.unlockApprovedByParent)
+        throw new ApiError(403, "Your parent must unlock this goal first.");
       const remaining = goal.currentAmount.minus(withdrawAmount);
 
       const updatedGoal = await tx.savingsGoal.update({
@@ -137,7 +177,7 @@ export async function POST(
           ipAddress,
           userAgent,
         },
-        tx
+        tx,
       );
 
       return { updatedGoal, updatedWallet };
@@ -153,13 +193,20 @@ export async function POST(
         wallet: {
           spendBalance: result.updatedWallet.spendBalance.toString(),
           saveBalance: result.updatedWallet.saveBalance.toString(),
-          giveBalance: result.updatedWallet.giveBalance.toString(),
         },
       },
       200,
-      `Withdrew $${withdrawAmount.toFixed(2)} to ${input.destinationBucket} bucket`
+      `Withdrew $${withdrawAmount.toFixed(2)} to ${input.destinationBucket} bucket`,
     );
   } catch (error) {
     return handleRouteError(error);
   }
+}
+
+async function notifyWithPushRecord(
+  input: Parameters<typeof prisma.notification.create>[0],
+) {
+  return notifyWithPush(
+    input.data as import("@prisma/client").Prisma.NotificationUncheckedCreateInput,
+  );
 }

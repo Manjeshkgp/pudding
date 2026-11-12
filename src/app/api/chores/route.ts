@@ -1,3 +1,5 @@
+import { olderThan, pageCursor, pageSize, takePage } from "@/lib/list-page";
+import { chorePeriod } from "@/lib/chore-period";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
@@ -18,7 +20,9 @@ const createChoreSchema = z.object({
     .min(0, "Reward amount cannot be negative")
     .max(1000, "Reward amount cannot exceed $1,000"),
   dueDate: z.string().datetime().optional().nullable(),
-  recurrence: z.enum(["ONCE", "DAILY", "WEEKLY", "MONTHLY"]).default("ONCE"),
+  recurrence: z
+    .enum(["ONCE", "DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"])
+    .default("ONCE"),
   assigneeIds: z
     .array(z.string().trim().min(1))
     .min(1, "Assign the chore to at least one child (FR-5.1)"),
@@ -36,12 +40,77 @@ export async function GET(req: NextRequest) {
     const includeInactive =
       req.nextUrl.searchParams.get("includeInactive") === "true";
 
+    const view = req.nextUrl.searchParams.get("view");
+    if (view === "manage" || view === "assigned") {
+      if (view === "assigned" && session.subjectType !== "CHILD")
+        throw new ApiError(403, "Child access required.", "CHILD_REQUIRED");
+      const parent = view === "manage" ? await requireParent(req) : null;
+      const rows = await prisma.chore.findMany({
+        where: {
+          familyId: parent?.family.id ?? session.familyId,
+          isTemplate: false,
+          deletedAt: null,
+          ...(!parent
+            ? { isActive: true, assigneeIds: { has: session.sub } }
+            : {}),
+          ...olderThan("createdAt", pageCursor(req.nextUrl.searchParams)),
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: pageSize + 1,
+      });
+      const page = takePage(rows, "createdAt");
+      const now = new Date();
+      // Read only submission statuses for this page. The full evidence lives
+      // in the separate submissions feed.
+      const items = await Promise.all(
+        page.items.map(async (chore) => {
+          const period = chorePeriod(chore.recurrence, chore.createdAt, now);
+          const latestSubmission = parent
+            ? null
+            : await prisma.choreSubmission.findFirst({
+                where: {
+                  choreId: chore.id,
+                  childId: session.sub,
+                  ...(period
+                    ? { submittedAt: { gte: period.start, lt: period.end } }
+                    : {}),
+                },
+                orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+                select: { status: true },
+              });
+          const approved =
+            parent && !chore.isActive && chore.recurrence === "ONCE"
+              ? await prisma.choreSubmission.findMany({
+                  where: {
+                    choreId: chore.id,
+                    status: "APPROVED",
+                    childId: { in: chore.assigneeIds },
+                  },
+                  select: { childId: true },
+                  distinct: ["childId"],
+                })
+              : [];
+          return {
+            ...chore,
+            rewardAmount: chore.rewardAmount.toString(),
+            dueDate: period?.end ?? null,
+            latestSubmission,
+            completed:
+              approved.length > 0 &&
+              approved.length === chore.assigneeIds.length,
+          };
+        }),
+      );
+      return apiSuccess({ items, nextCursor: page.nextCursor });
+    }
+
     if (session.subjectType === "CHILD") {
       // Child sees only chores assigned to them (FR-11.4)
       const chores = await prisma.chore.findMany({
         where: {
           familyId: session.familyId,
           isTemplate: false,
+          deletedAt: null,
           isActive: true,
           assigneeIds: { has: session.sub },
         },
@@ -61,7 +130,7 @@ export async function GET(req: NextRequest) {
       });
 
       const approvedCount = allSubmissions.filter(
-        (s) => s.status === "APPROVED"
+        (s) => s.status === "APPROVED",
       ).length;
       const completionRate =
         allSubmissions.length > 0
@@ -72,6 +141,14 @@ export async function GET(req: NextRequest) {
         chores: chores.map((c) => ({
           ...c,
           rewardAmount: c.rewardAmount.toString(),
+          latestSubmission:
+            c.submissions.find((s) => {
+              const period = chorePeriod(c.recurrence, c.createdAt);
+              return (
+                !period ||
+                (s.submittedAt >= period.start && s.submittedAt < period.end)
+              );
+            }) ?? null,
           submissions: c.submissions.map((s) => ({
             ...s,
             rewardAmountPaid: s.rewardAmountPaid?.toString() ?? null,
@@ -96,6 +173,7 @@ export async function GET(req: NextRequest) {
       where: {
         familyId: family.id,
         isTemplate: false,
+        deletedAt: null,
         ...(includeInactive ? {} : { isActive: true }),
         ...(childIdParam ? { assigneeIds: { has: childIdParam } } : {}),
       },
@@ -123,7 +201,7 @@ export async function GET(req: NextRequest) {
     });
 
     const approvedCount = allFamilySubmissions.filter(
-      (s) => s.status === "APPROVED"
+      (s) => s.status === "APPROVED",
     ).length;
     const completionRate =
       allFamilySubmissions.length > 0
@@ -142,11 +220,10 @@ export async function GET(req: NextRequest) {
       stats: {
         totalSubmissions: allFamilySubmissions.length,
         approvedCount,
-        pendingCount: allFamilySubmissions.filter(
-          (s) => s.status === "PENDING"
-        ).length,
+        pendingCount: allFamilySubmissions.filter((s) => s.status === "PENDING")
+          .length,
         rejectedCount: allFamilySubmissions.filter(
-          (s) => s.status === "REJECTED"
+          (s) => s.status === "REJECTED",
         ).length,
         completionRatePercent: completionRate,
       },
@@ -179,7 +256,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "One or more assigned child IDs do not belong to your family",
-        "INVALID_ASSIGNEES"
+        "INVALID_ASSIGNEES",
       );
     }
 
@@ -233,7 +310,7 @@ export async function POST(req: NextRequest) {
         rewardAmount: chore.rewardAmount.toString(),
       },
       201,
-      "Chore created and assigned"
+      "Chore created and assigned",
     );
   } catch (error) {
     return handleRouteError(error);

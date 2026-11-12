@@ -1,5 +1,7 @@
+import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { taskSubmissionPath } from "@/lib/navigation-policy";
 import { dispatchPushToTarget } from "@/services/push.service";
 import { sendAlertEmail } from "@/services/email.service";
 import { sendSms } from "@/services/sms.service";
@@ -26,7 +28,7 @@ export interface DispatchNotificationInput {
 export function isWithinQuietHours(
   quietStart?: string | null,
   quietEnd?: string | null,
-  nowHHMM?: string
+  nowHHMM?: string,
 ): boolean {
   if (!quietStart || !quietEnd) return false;
 
@@ -48,7 +50,7 @@ export function isWithinQuietHours(
     (() => {
       const d = new Date();
       return `${String(d.getHours()).padStart(2, "0")}:${String(
-        d.getMinutes()
+        d.getMinutes(),
       ).padStart(2, "0")}`;
     })();
 
@@ -96,7 +98,7 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
     const quietActive = isWithinQuietHours(
       child?.quietHoursStart,
       child?.quietHoursEnd,
-      input.currentTimeHHMM
+      input.currentTimeHHMM,
     );
 
     if (quietActive) {
@@ -145,6 +147,17 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
     const pushEnabled = pref ? pref.pushEnabled : true;
     const emailEnabled = pref ? pref.emailEnabled : true;
     const smsEnabled = pref ? pref.smsEnabled : false;
+    const purchaseId = input.data?.purchaseId;
+    if (
+      process.env.NODE_ENV === "development" &&
+      typeof purchaseId === "string" &&
+      input.data?.href === `/approve/${encodeURIComponent(purchaseId)}`
+    ) {
+      logger.debug("push.approval_inbox_created", {
+        requestId: purchaseId,
+        pushEnabled,
+      });
+    }
 
     if (typeof input.transactionAmount === "number" && pref) {
       const threshold = pref.notifyThresholdAmount
@@ -196,7 +209,7 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
     if (smsEnabled && user.phone) {
       const smsRes = await sendSms({
         toPhone: user.phone,
-        message: `GoodSpend: ${input.title} - ${input.body}`,
+        message: `Pudding: ${input.title} - ${input.body}`,
       });
       if (smsRes.delivered) {
         channelsDispatched.push("SMS");
@@ -213,4 +226,63 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
     notification: inAppNotification,
     channelsDispatched: ["IN_APP"],
   };
+}
+
+/** Maps new UI notifications through the existing preferences/quiet-hours dispatcher. */
+export async function notifyWithPush(
+  input: Prisma.NotificationUncheckedCreateInput,
+) {
+  const data =
+    input.metadata && typeof input.metadata === "object"
+      ? (input.metadata as Record<string, unknown>)
+      : undefined;
+  const metadata = data as
+    | { purchaseId?: string; submissionId?: string; goalId?: string }
+    | undefined;
+  const href = metadata?.purchaseId
+    ? `/purchases/${metadata.purchaseId}`
+    : metadata?.goalId
+      ? `/goals/${metadata.goalId}`
+      : metadata?.submissionId
+        ? taskSubmissionPath(metadata.submissionId)
+        : "/inbox";
+  const common = {
+    familyId: input.familyId,
+    type: input.type,
+    title: input.title,
+    body: input.message,
+    data: { ...data, href },
+  };
+  if (input.childId)
+    return (await dispatchNotification({ ...common, childId: input.childId }))
+      .notification;
+  if (input.userId)
+    return (await dispatchNotification({ ...common, userId: input.userId }))
+      .notification;
+  const parents = input.familyId
+    ? await prisma.user.findMany({
+        where: { familyId: input.familyId },
+        select: { id: true },
+      })
+    : [];
+  if (!parents.length) return (await dispatchNotification(common)).notification;
+  let first:
+    | Awaited<ReturnType<typeof dispatchNotification>>["notification"]
+    | null = null;
+  for (const parent of parents) {
+    try {
+      const result = await dispatchNotification({
+        ...common,
+        userId: parent.id,
+      });
+      first ||= result.notification;
+    } catch (error) {
+      logger.warn(
+        "notification.dispatch_failed",
+        { provider: "notifications" },
+        error,
+      );
+    }
+  }
+  return first;
 }
