@@ -347,7 +347,7 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
                   ) : isFocused && f.value && !isEmail ? (
                     <button
                       type="button"
-                      aria-label={shown ? "Hide password" : "Show password"}
+                      aria-label={`${shown ? "Hide" : "Show"} ${copy.plainEmail ? "PIN" : "password"}`}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setShown((v) => !v)}
                       className="flex h-full shrink-0 items-center justify-center px-2"
@@ -364,16 +364,16 @@ export default function LoginScreen({ copy = PARENT }: { copy?: LoginCopy }) {
             );
           })}
 
-          <div className="py-1">
+          {copy.forgotHref && <div className="py-1">
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => copy.forgotHref && router.push(copy.forgotHref)}
               className="flex h-[43px] items-center justify-center rounded-full bg-[#f3f3f3] px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
             >
-              Forgot password?
+              {copy.plainEmail ? "Forgot PIN?" : "Forgot password?"}
             </button>
-          </div>
+          </div>}
         </form>
       </div>
 

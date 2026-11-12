@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useRouter } from "next/navigation";
 import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
 import { getApi, postApi } from "@/lib/client-api";
@@ -16,7 +15,6 @@ const LENGTH = 6;
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function PinScreen() {
-  const router = useRouter();
   const [step, setStep] = useState<"create" | "confirm">("create");
   const [first, setFirst] = useState("");
   const [pin, setPin] = useState("");
@@ -30,10 +28,11 @@ export default function PinScreen() {
   useEffect(() => {
     getApi<{ pinSet: boolean }>("/api/auth/parent/pin")
       .then((r) => {
-        if (r.pinSet) router.replace("/family");
+        if (r.pinSet)
+          window.location.replace("/api/auth/navigation/refresh?returnTo=%2Fonboarding");
       })
       .catch((e) => setSaveError(e.message));
-  }, [router]);
+  }, []);
 
   // The picture picked on the profile screen
   useEffect(() => {
@@ -81,8 +80,9 @@ export default function PinScreen() {
     }
     postApi<{ nextRoute: string }>("/api/auth/parent/pin", { newPin: pin })
       .then(({ nextRoute }) => {
-        router.replace(nextRoute);
-        router.refresh();
+        // Read the freshly updated session on a full navigation, not from a
+        // previously prefetched onboarding page in the client router cache.
+        window.location.replace(nextRoute);
       })
       .catch((e: unknown) => {
         setSaveError(e instanceof Error ? e.message : "Unable to save PIN.");

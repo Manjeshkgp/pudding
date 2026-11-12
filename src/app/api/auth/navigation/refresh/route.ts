@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { navigationState } from "@/lib/onboarding";
 import { navigationRedirect } from "@/lib/navigation-policy";
 import { refreshSessionNavigation } from "@/lib/refresh-navigation";
-import { clearSessionCookie } from "@/lib/jwt";
 import {
-  clearParentSignupCookie,
   getParentSignupDraft,
   refreshSignupProgressCookie,
 } from "@/lib/parent-signup";
@@ -22,7 +20,10 @@ export async function GET(req: NextRequest) {
       throw new ApiError(400, "Invalid return path.");
     const state = await navigationState(req);
     const destination =
-      path === "/onboarding"
+      req.nextUrl.searchParams.get("requireSession") === "1" &&
+      (state.kind === "GUEST" || state.kind === "DRAFT")
+        ? "/login"
+        : path === "/onboarding"
         ? state.nextRoute
         : navigationRedirect(state, path) || path;
     // A relative Location keeps the browser on the public origin behind proxies.
@@ -31,13 +32,13 @@ export async function GET(req: NextRequest) {
     if (["PARENT", "CHILD", "BLOCKED"].includes(state.kind))
       await refreshSessionNavigation(req, response, state);
     else {
-      clearSessionCookie(response);
+      // A delayed guest refresh must not erase a session created by a newer
+      // signup or login response in the same browser.
       if (state.kind === "DRAFT")
         await refreshSignupProgressCookie(
           response,
           await getParentSignupDraft(req),
         );
-      else clearParentSignupCookie(response);
     }
     return response;
   } catch (error) {

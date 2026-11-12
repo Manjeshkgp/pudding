@@ -130,7 +130,7 @@ export default function PaypalScreen({
     if (vaultConnected) {
       if (mode === "onboarding") {
         setConnecting(true);
-        window.location.replace("/api/auth/navigation/refresh?returnTo=%2Fonboarding");
+        window.location.replace("/api/auth/navigation/refresh?returnTo=%2Fonboarding&requireSession=1");
       } else router.replace("/account");
       return;
     }
