@@ -141,6 +141,7 @@ export async function GET(req: NextRequest) {
             id: child.wallet.id,
             spendBalance: child.wallet.spendBalance.toString(),
             saveBalance: child.wallet.saveBalance.toString(),
+            purchaseReservedBalance: child.wallet.purchaseReservedBalance.toString(),
 
             defaultSplitSpend: child.wallet.defaultSplitSpend,
             defaultSplitSave: child.wallet.defaultSplitSave,

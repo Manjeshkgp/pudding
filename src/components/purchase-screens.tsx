@@ -587,7 +587,7 @@ function PurchaseList({ approvals = false }: { approvals?: boolean }) {
 
 export function ApprovalsScreen({ tab }: { tab: "purchases" | "tasks" }) {
   return (
-    <AppScreen title="Your approval queue" role="USER">
+    <AppScreen title="Your approval queue" role="USER" back="/inbox">
       <FeedSwitcher
         options={[
           {
@@ -652,7 +652,7 @@ export function ActivityScreen({
   return (
     <AppScreen
       title={child ? "Your money" : "Family activity"}
-      back={child ? "/home" : "/family"}
+      back={child ? "/home" : "/account"}
     >
       <Status error={me.error} />
       {wallet && (

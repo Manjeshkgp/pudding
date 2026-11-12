@@ -38,6 +38,9 @@ export default function InboxScreen() {
       back={me.data?.subjectType === "CHILD" ? "/home" : "/family"}
     >
       <Status loading={remote.loading} error={remote.error || action.error} />
+      {me.data?.subjectType === "USER" && (
+        <ActionLink href="/approvals">Review approvals</ActionLink>
+      )}
       {me.data?.subjectType === "CHILD" && (
         <>
           <Button
