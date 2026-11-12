@@ -17,7 +17,7 @@ export default function Template({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className={slide ? "page-slide-in" : undefined}
+      className={slide ? (pathname === "/me" ? "page-slide-in from-left" : "page-slide-in") : undefined}
       // Back to normal page flow once the slide is done
       onAnimationEnd={() => setSlide(false)}
     >

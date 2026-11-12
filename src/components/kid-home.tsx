@@ -141,7 +141,7 @@ export default function KidHome() {
 
         {/* Header */}
         <header className="fixed inset-x-0 top-0 z-0 mx-auto flex w-full max-w-[520px] items-center justify-between bg-gradient-to-b from-black/40 to-transparent px-4 pb-[60px] pt-[max(24px,env(safe-area-inset-top))]">
-          <div className="flex items-center gap-2">
+          <Link href="/me" aria-label="Your profile" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/images/profile/avatar-2.svg"
@@ -151,7 +151,7 @@ export default function KidHome() {
             <h1 className="font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-white">
               Alex
             </h1>
-          </div>
+          </Link>
           <button type="button" className="flex items-center justify-center gap-1 rounded-full bg-white px-3 py-2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -167,7 +167,7 @@ export default function KidHome() {
         </header>
 
         {/* Cards */}
-        <div className="relative z-10 flex flex-col gap-2.5 p-2 pt-[526px]">
+        <div className="pointer-events-none [&>*]:pointer-events-auto relative z-10 flex flex-col gap-2.5 p-2 pt-[526px]">
           <PinCard
             top={CARD_TOP}
             height={CARD1_H}

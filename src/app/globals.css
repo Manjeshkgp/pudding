@@ -54,6 +54,20 @@ body {
   animation: page-slide-in 350ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* The kid profile opens from the avatar at the top left, so it slides in from the left */
+@keyframes page-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.page-slide-in.from-left {
+  animation-name: page-slide-in-left;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page-slide-in {
     position: static;
