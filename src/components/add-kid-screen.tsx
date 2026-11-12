@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import BackButton from "@/components/back-button";
-import SetupExitButton from "@/components/setup-exit-button";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -235,7 +234,7 @@ export default function AddKidScreen({
               <span className="size-11" />
             )}
             {mode === "onboarding" ? (
-              <SetupExitButton />
+              <span className="size-11" />
             ) : (
               <Link
                 href="/account"

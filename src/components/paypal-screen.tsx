@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import BackButton from "@/components/back-button";
-import SetupExitButton from "@/components/setup-exit-button";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
@@ -171,7 +170,6 @@ export default function PaypalScreen({
         description={mode === "onboarding"
           ? "Your wallet is ready for approved Sandbox purchases. Set your parent PIN next."
           : "Your wallet is ready for approved Sandbox purchases."}
-        animation="paypal-connection"
         label="Continue"
         busy={connecting}
         onContinue={connectPayPal}
@@ -207,7 +205,7 @@ export default function PaypalScreen({
             </BackButton>
           )}
           {mode === "onboarding" ? (
-            <SetupExitButton />
+            <span className="size-11" />
           ) : (
             <Link
               href="/account"

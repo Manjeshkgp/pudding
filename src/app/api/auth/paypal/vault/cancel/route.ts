@@ -13,6 +13,5 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const base = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  return NextResponse.redirect(new URL("/paypal?paypal_vault=cancelled", base));
+  return new NextResponse(null, { status: 307, headers: { Location: "/paypal?paypal_vault=cancelled" } });
 }

@@ -31,7 +31,7 @@ self.addEventListener("push", (event) => {
     self.registration
       .showNotification(payload.title || "Pudding", {
         body: payload.body || "You have a new update.",
-        icon: "/images/pudding-app-192.png",
+        icon: "/images/pudding-app-192.png?v=2",
         data: payload.data || {},
       })
       .then(() => {

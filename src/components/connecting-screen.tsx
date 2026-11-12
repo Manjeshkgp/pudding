@@ -36,7 +36,7 @@ export default function PayPalSuccessScreen({
             aria-hidden="true"
             className={animation === "paypal-connection"
               ? "aspect-[402/874] h-[min(50dvh,420px)] shrink-0"
-              : "size-32 shrink-0"}
+              : "size-48 shrink-0"}
           >
             <Lottie
               src={`/lottie/${animation}.json`}
@@ -47,8 +47,8 @@ export default function PayPalSuccessScreen({
             />
           </div>
         ) : (
-          <div className="grid size-24 place-items-center rounded-full bg-[#eaf6ed] text-[#0e8345]" aria-hidden="true">
-            <CheckmarkIcon className="size-12" />
+          <div className="grid size-36 place-items-center rounded-full bg-[#eaf6ed] text-[#0e8345]" aria-hidden="true">
+            <CheckmarkIcon className="size-16" />
           </div>
         )}
         <div role="status" className="flex max-w-sm flex-col gap-3">

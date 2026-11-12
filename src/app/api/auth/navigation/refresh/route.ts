@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
       path === "/onboarding"
         ? state.nextRoute
         : navigationRedirect(state, path) || path;
-    const response = NextResponse.redirect(new URL(destination, req.url));
+    // A relative Location keeps the browser on the public origin behind proxies.
+    const response = new NextResponse(null, { status: 307, headers: { Location: destination } });
     response.headers.set("Cache-Control", "private, no-store");
     if (["PARENT", "CHILD", "BLOCKED"].includes(state.kind))
       await refreshSessionNavigation(req, response, state);

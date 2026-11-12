@@ -23,9 +23,9 @@ export const metadata: Metadata = {
   applicationName: "Pudding",
   manifest: "/manifest.json",
   icons: {
-    icon: "/images/pudding-cat.svg",
-    shortcut: "/images/pudding-cat.svg",
-    apple: "/images/pudding-app-192.png",
+    icon: "/images/pudding-app-icon.svg",
+    shortcut: "/images/pudding-app-icon.svg",
+    apple: "/images/pudding-app-192.png?v=2",
   },
 };
 

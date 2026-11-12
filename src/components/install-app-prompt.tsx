@@ -72,7 +72,7 @@ export default function InstallAppPrompt() {
     >
       {/* Reuse the same brand image as the favicon, app icon, and push icon. */}
       <img
-        src="/images/pudding-cat.svg"
+        src="/images/pudding-app-icon.svg"
         alt=""
         className="h-12 w-12 shrink-0 rounded-xl"
       />

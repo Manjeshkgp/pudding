@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
       error instanceof ApiError && error.code === "PAYPAL_TRIAL_REQUIRED" &&
       req.nextUrl.searchParams.get("mode") !== "json"
     )
-      return NextResponse.redirect(new URL("/api/auth/navigation/refresh?returnTo=%2Fonboarding%2Fplan", req.url));
+      return new NextResponse(null, { status: 307, headers: { Location: "/api/auth/navigation/refresh?returnTo=%2Fonboarding%2Fplan" } });
     return handleRouteError(error);
   }
 }

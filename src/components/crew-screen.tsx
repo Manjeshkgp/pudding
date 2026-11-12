@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import BackButton from "@/components/back-button";
-import SetupExitButton from "@/components/setup-exit-button";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
@@ -52,7 +51,7 @@ export default function CrewScreen({
             <ChevronLeftIcon className="size-6 text-black" />
           </BackButton>
           {mode === "onboarding" ? (
-            <SetupExitButton />
+            <span className="size-11" />
           ) : (
             <Link
               href="/account"

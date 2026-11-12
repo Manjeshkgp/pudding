@@ -8,7 +8,7 @@ import {
 import { navigationState } from "@/lib/onboarding";
 export async function GET(req: NextRequest) {
   const state = await navigationState(req);
-  const response = NextResponse.redirect(new URL(state.nextRoute, req.url));
+  const response = new NextResponse(null, { status: 307, headers: { Location: state.nextRoute } });
   response.headers.set("Cache-Control", "private, no-store");
   if (state.kind === "DRAFT") {
     const draft = await getParentSignupDraft(req);
