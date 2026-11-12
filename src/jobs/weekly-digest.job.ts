@@ -37,7 +37,7 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
 
     const childrenSummaries = await Promise.all(
       family.children.map(async (child) => {
-        const [ledgerEntries, choresCompleted, lessonsCompleted] =
+        const [ledgerEntries, choresCompleted] =
           await Promise.all([
             prisma.ledgerEntry.findMany({
               where: {
@@ -51,12 +51,6 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
                 childId: child.id,
                 status: "APPROVED",
                 reviewedAt: { gte: sevenDaysAgo },
-              },
-            }),
-            prisma.lessonProgress.count({
-              where: {
-                childId: child.id,
-                completedAt: { gte: sevenDaysAgo },
               },
             }),
           ]);
@@ -93,7 +87,6 @@ export async function runWeeklyDigestJob(options?: RunWeeklyDigestOptions) {
           totalSpent: spent.toFixed(2),
           totalSaved: saved.toFixed(2),
           choresCompleted,
-          lessonsCompleted,
         };
       }),
     );

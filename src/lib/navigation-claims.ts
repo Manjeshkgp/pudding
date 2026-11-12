@@ -1,26 +1,27 @@
 import type { NavigationState } from "@/lib/navigation-policy";
 export type SessionNavigationClaim = {
-  version: 1;
-  status: "CHILDREN" | "PAYPAL" | "PIN" | "COMPLETED" | "CHILD" | "BLOCKED";
+  version: 2;
+  status: "CHILDREN" | "PLAN" | "PAYPAL" | "PIN" | "COMPLETED" | "CHILD" | "BLOCKED";
   childCount?: number;
 };
 export function claimFromState(state: NavigationState): SessionNavigationClaim {
-  if (state.kind === "BLOCKED") return { version: 1, status: "BLOCKED" };
-  if (state.kind === "CHILD") return { version: 1, status: "CHILD" };
+  if (state.kind === "BLOCKED") return { version: 2, status: "BLOCKED" };
+  if (state.kind === "CHILD") return { version: 2, status: "CHILD" };
   if (state.kind !== "PARENT")
     throw new Error(
       "Cannot issue an authenticated session for a missing account.",
     );
-  if (state.completed) return { version: 1, status: "COMPLETED" };
+  if (state.completed) return { version: 2, status: "COMPLETED" };
   if (state.childrenStage)
     return {
-      version: 1,
+      version: 2,
       status: "CHILDREN",
       childCount: state.childCount || 0,
     };
   return {
-    version: 1,
-    status: state.nextRoute === "/onboarding/paypal" ? "PAYPAL" : "PIN",
+    version: 2,
+    status: state.nextRoute === "/onboarding/plan" ? "PLAN"
+      : state.nextRoute === "/onboarding/paypal" ? "PAYPAL" : "PIN",
   };
 }
 export function parseNavigationClaim(
@@ -29,11 +30,11 @@ export function parseNavigationClaim(
 ): SessionNavigationClaim | undefined {
   if (!value || typeof value !== "object") return;
   const v = value as Partial<SessionNavigationClaim>;
-  if (v.version !== 1) return;
+  if (v.version !== 2) return;
   const allowed =
     subject === "CHILD"
       ? ["CHILD", "BLOCKED"]
-      : ["CHILDREN", "PAYPAL", "PIN", "COMPLETED", "BLOCKED"];
+      : ["CHILDREN", "PLAN", "PAYPAL", "PIN", "COMPLETED", "BLOCKED"];
   if (!v.status || !allowed.includes(v.status)) return;
   if (
     v.status === "CHILDREN" &&
@@ -41,7 +42,7 @@ export function parseNavigationClaim(
   )
     return;
   return {
-    version: 1,
+    version: 2,
     status: v.status,
     ...(v.status === "CHILDREN" ? { childCount: v.childCount } : {}),
   };
@@ -68,6 +69,8 @@ export function stateFromClaim(claim: SessionNavigationClaim): NavigationState {
         childrenStage: true,
         childCount: claim.childCount || 0,
       };
+    case "PLAN":
+      return { kind: "PARENT", nextRoute: "/onboarding/plan", completed: false };
     case "PAYPAL":
       return {
         kind: "PARENT",

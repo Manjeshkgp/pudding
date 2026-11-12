@@ -8,7 +8,7 @@ export { draftNextRoute, navigationRedirect } from "@/lib/navigation-policy";
 import { draftNextRoute, NavigationState } from "@/lib/navigation-policy";
 import type { SessionPayload } from "@/lib/jwt";
 export async function completeOnboardingIfReady(userId: string) {
-  await prisma.user.updateMany({
+  return prisma.user.updateMany({
     where: {
       id: userId,
       role: "PRIMARY_PARENT",
@@ -16,18 +16,35 @@ export async function completeOnboardingIfReady(userId: string) {
       onboardingChildrenConfirmedAt: { not: null },
       paypalVaultId: { not: null },
       pinHash: { not: null },
-      family: { is: { children: { some: {} } } },
+      family: { is: { children: { some: {} }, subscription: { is: { status: "ACTIVE" } } } },
     },
     data: { onboardingCompletedAt: new Date() },
   });
 }
+
+export async function requireOnboardingSubscription(user: {
+  role: string;
+  familyId: string | null;
+  onboardingCompletedAt: Date | null;
+}) {
+  if (user.role !== "PRIMARY_PARENT" || user.onboardingCompletedAt) return;
+  const subscription = user.familyId && await prisma.familySubscription.findUnique({
+    where: { familyId: user.familyId },
+    select: { status: true },
+  });
+  if (!subscription || subscription.status !== "ACTIVE")
+    throw new ApiError(403, "Approve your free trial in PayPal before continuing.", "PAYPAL_TRIAL_REQUIRED");
+}
+
 export async function accountNavigationState(
   session: SessionPayload | null,
 ): Promise<NavigationState | null> {
   if (session?.subjectType === "USER") {
     const user = await prisma.user.findUnique({
       where: { id: session.sub },
-      include: { family: { select: { isFrozen: true } } },
+      include: {
+        family: { select: { isFrozen: true, subscription: { select: { status: true } } } },
+      },
     });
     if (user && (user.isFrozen || user.family?.isFrozen))
       return {
@@ -53,6 +70,8 @@ export async function accountNavigationState(
           childCount,
           completed: false,
         };
+      if (user.family?.subscription?.status !== "ACTIVE")
+        return { kind: "PARENT", nextRoute: "/onboarding/plan", completed: false };
       if (!user.paypalVaultId)
         return {
           kind: "PARENT",
@@ -65,7 +84,15 @@ export async function accountNavigationState(
           nextRoute: "/onboarding/pin",
           completed: false,
         };
-      await completeOnboardingIfReady(user.id);
+      const result = await completeOnboardingIfReady(user.id);
+      if (!result.count) {
+        const latest = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { onboardingCompletedAt: true },
+        });
+        if (!latest?.onboardingCompletedAt)
+          return { kind: "PARENT", nextRoute: "/onboarding/plan", completed: false };
+      }
       return { kind: "PARENT", nextRoute: "/family", completed: true };
     }
     if (user)

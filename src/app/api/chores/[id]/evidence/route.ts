@@ -11,36 +11,6 @@ import {
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { chorePeriod } from "@/lib/chore-period";
 export const runtime = "nodejs";
-export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { session, chore } = await choreAccess(
-      req,
-      (await context.params).id,
-    );
-    const evidence = await prisma.choreEvidence.findMany({
-      where: {
-        choreId: chore.id,
-        ...(session.subjectType === "CHILD" ? { childId: session.sub } : {}),
-      },
-      select: {
-        id: true,
-        childId: true,
-        stage: true,
-        createdAt: true,
-        beforeSubmission: { select: { id: true } },
-        afterSubmission: { select: { id: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-    });
-    return apiSuccess({ evidence });
-  } catch (error) {
-    return handleRouteError(error);
-  }
-}
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },

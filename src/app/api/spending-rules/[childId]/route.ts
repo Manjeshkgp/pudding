@@ -8,7 +8,6 @@ import {
   validateBody,
 } from "@/lib/api-response";
 import { requireChildOrFamilyParent, requireParent } from "@/lib/auth-guard";
-import { STANDARD_SPENDING_CATEGORIES } from "@/services/spending-rules.service";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
 const updateSpendingRuleSchema = z.object({
@@ -16,18 +15,14 @@ const updateSpendingRuleSchema = z.object({
   dailyLimit: z.number().min(0).max(10000).nullable().optional(),
   weeklyLimit: z.number().positive().max(25000).nullable().optional(),
   monthlyLimit: z.number().positive().max(50000).nullable().optional(),
-  autoApproveUnderAmount: z.number().min(0).max(1000).nullable().optional(),
   inStoreEnabled: z.boolean().optional(),
   onlineEnabled: z.boolean().optional(),
   ageBlockEnabled: z.boolean().optional(),
-  autoApproveCategories: z.array(z.string().trim().min(1)).optional(),
-  safeListMerchants: z.array(z.string().trim().min(1)).optional(),
-  requireApprovalCategories: z.array(z.string().trim().min(1)).optional(),
 });
 
 /**
  * GET /api/spending-rules/[childId]
- * Retrieves spending limits, category rules, and merchant safe-list for a child (FR-7.4, FR-7.5).
+ * Retrieves spending limits and controls for a child (FR-7.4, FR-7.5).
  */
 export async function GET(
   req: NextRequest,
@@ -45,9 +40,6 @@ export async function GET(
       rule = await prisma.spendingRule.create({
         data: {
           childId: child.id,
-          autoApproveCategories: [],
-          safeListMerchants: [],
-          requireApprovalCategories: [],
         },
       });
     }
@@ -55,7 +47,6 @@ export async function GET(
     return apiSuccess({
       childId: child.id,
       childName: child.name,
-      availableCategories: STANDARD_SPENDING_CATEGORIES,
       rule: {
         id: rule.id,
         inStoreEnabled: rule.inStoreEnabled,
@@ -65,10 +56,6 @@ export async function GET(
         dailyLimit: rule.dailyLimit?.toString() ?? null,
         weeklyLimit: rule.weeklyLimit?.toString() ?? null,
         monthlyLimit: rule.monthlyLimit?.toString() ?? null,
-        autoApproveUnderAmount: rule.autoApproveUnderAmount?.toString() ?? null,
-        autoApproveCategories: rule.autoApproveCategories,
-        safeListMerchants: rule.safeListMerchants,
-        requireApprovalCategories: rule.requireApprovalCategories,
         updatedAt: rule.updatedAt,
       },
     });
@@ -79,8 +66,7 @@ export async function GET(
 
 /**
  * PUT /api/spending-rules/[childId]
- * Parent configures per-transaction limit, daily/weekly/monthly limits,
- * categories requiring approval vs. auto-approved, and safe-list of merchants (FR-7.4, FR-7.5).
+ * Parent configures spending limits and controls.
  */
 export async function PUT(
   req: NextRequest,
@@ -115,14 +101,6 @@ export async function PUT(
         dailyLimit: input.dailyLimit ?? null,
         weeklyLimit: input.weeklyLimit ?? null,
         monthlyLimit: input.monthlyLimit ?? null,
-        autoApproveUnderAmount: input.autoApproveUnderAmount ?? null,
-        autoApproveCategories: (input.autoApproveCategories ?? []).map((c) =>
-          c.toUpperCase(),
-        ),
-        safeListMerchants: input.safeListMerchants ?? [],
-        requireApprovalCategories: (input.requireApprovalCategories ?? []).map(
-          (c) => c.toUpperCase(),
-        ),
       },
       update: {
         inStoreEnabled: input.inStoreEnabled,
@@ -139,26 +117,6 @@ export async function PUT(
           : {}),
         ...(input.monthlyLimit !== undefined
           ? { monthlyLimit: input.monthlyLimit }
-          : {}),
-        ...(input.autoApproveUnderAmount !== undefined
-          ? { autoApproveUnderAmount: input.autoApproveUnderAmount }
-          : {}),
-        ...(input.autoApproveCategories !== undefined
-          ? {
-              autoApproveCategories: input.autoApproveCategories.map((c) =>
-                c.toUpperCase(),
-              ),
-            }
-          : {}),
-        ...(input.safeListMerchants !== undefined
-          ? { safeListMerchants: input.safeListMerchants }
-          : {}),
-        ...(input.requireApprovalCategories !== undefined
-          ? {
-              requireApprovalCategories: input.requireApprovalCategories.map(
-                (c) => c.toUpperCase(),
-              ),
-            }
           : {}),
       },
     });
@@ -187,15 +145,10 @@ export async function PUT(
           dailyLimit: updated.dailyLimit?.toString() ?? null,
           weeklyLimit: updated.weeklyLimit?.toString() ?? null,
           monthlyLimit: updated.monthlyLimit?.toString() ?? null,
-          autoApproveUnderAmount:
-            updated.autoApproveUnderAmount?.toString() ?? null,
-          autoApproveCategories: updated.autoApproveCategories,
-          safeListMerchants: updated.safeListMerchants,
-          requireApprovalCategories: updated.requireApprovalCategories,
         },
       },
       200,
-      `Spending limits and safe-list updated for ${child.name}`,
+      `Spending controls updated for ${child.name}`,
     );
   } catch (error) {
     return handleRouteError(error);

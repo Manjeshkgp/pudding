@@ -30,7 +30,6 @@ export async function creditScheduledAllowance(
       targetBucket: "SPEND",
       referenceId: ruleId,
       description: "Scheduled Spend allowance",
-      allowAutoTopUp: false,
     },
     tx,
   );

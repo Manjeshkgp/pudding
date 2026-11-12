@@ -197,8 +197,6 @@ export async function POST(req: NextRequest) {
                 spendBalance: child.wallet.spendBalance.toString(),
                 saveBalance: child.wallet.saveBalance.toString(),
 
-                lockedPendingBalance:
-                  child.wallet.lockedPendingBalance.toString(),
                 defaultSplitSpend: child.wallet.defaultSplitSpend,
                 defaultSplitSave: child.wallet.defaultSplitSave,
               }

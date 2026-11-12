@@ -2,7 +2,6 @@ export type Wallet = {
   spendBalance: string;
   saveBalance: string;
 
-  lockedPendingBalance?: string;
   purchaseReservedBalance?: string;
   isFrozen?: boolean;
 };

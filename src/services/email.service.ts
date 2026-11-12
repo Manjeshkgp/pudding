@@ -161,7 +161,6 @@ export async function sendWeeklyDigestEmail(params: {
     totalSpent: string;
     totalSaved: string;
     choresCompleted: number;
-    lessonsCompleted: number;
   }>;
 }): Promise<SendEmailResult> {
   const html = renderWeeklyDigestEmailHtml(params);

@@ -1,69 +1,62 @@
 "use client";
 
-import { getApi } from "@/lib/client-api";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useReducedMotion } from "framer-motion";
+import { Button } from "@/components/app-ui";
+import { CheckmarkIcon } from "@/components/icons";
 
 const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), {
   ssr: false,
 });
 
-// PayPal connection motion exported from Figma (402 x 874, 5.4 s).
-// Shows confirmation only after the API verifies a saved wallet.
-export default function ConnectingScreen() {
+export default function PayPalSuccessScreen({
+  title,
+  description,
+  animation = "coin-to-tick",
+  label,
+  busy = false,
+  onContinue,
+}: {
+  title: string;
+  description: string;
+  animation?: "coin-to-tick" | "paypal-connection";
+  label: string;
+  busy?: boolean;
+  onContinue: () => void;
+}) {
   const reduceMotion = useReducedMotion();
-  const router = useRouter();
-  const [verified, setVerified] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    getApi<{ user?: { paypalVaultConnected: boolean } }>("/api/auth/me")
-      .then((r) => {
-        if (!r.user?.paypalVaultConnected) router.replace("/paypal");
-        else setVerified(true);
-      })
-      .catch(() => router.replace("/login"));
-  }, [router]);
-
-  // Go to the completion screen 1 second after the animation ends.
-  const goNext = () => {
-    if (!verified) return;
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => router.push("/pin"), 1000);
-  };
-
-  useEffect(() => {
-    if (!verified) return;
-    // Fallback if the animation never reports completion (e.g. reduced motion).
-    timer.current = window.setTimeout(
-      () => router.push("/pin"),
-      5400 + 1000 + 1000,
-    );
-    return () => window.clearTimeout(timer.current);
-  }, [router, verified]);
-  if (!verified)
-    return (
-      <main className="p-6" role="status">
-        Checking your PayPal connection…
-      </main>
-    );
+  const [animationFailed, setAnimationFailed] = useState(false);
+  const showMotion = reduceMotion === false && !animationFailed;
   return (
-    <main className="relative h-dvh overflow-hidden bg-white">
-      <div
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[874px] w-[402px] -translate-x-1/2 -translate-y-1/2"
-        role="status"
-        aria-label="Connecting to your PayPal account"
-      >
-        <Lottie
-          src="/lottie/paypal-connection.json"
-          loop={false}
-          subscriptions={{ complete: goNext }}
-          autoplay={!reduceMotion}
-          className="size-full"
-        />
+    <main className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col bg-white px-5 pb-[max(32px,env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))]">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 py-6 text-center">
+        {showMotion ? (
+          <div
+            aria-hidden="true"
+            className={animation === "paypal-connection"
+              ? "aspect-[402/874] h-[min(50dvh,420px)] shrink-0"
+              : "size-32 shrink-0"}
+          >
+            <Lottie
+              src={`/lottie/${animation}.json`}
+              loop={false}
+              autoplay
+              subscriptions={{ error: () => setAnimationFailed(true) }}
+              className="size-full"
+            />
+          </div>
+        ) : (
+          <div className="grid size-24 place-items-center rounded-full bg-[#eaf6ed] text-[#0e8345]" aria-hidden="true">
+            <CheckmarkIcon className="size-12" />
+          </div>
+        )}
+        <div role="status" className="flex max-w-sm flex-col gap-3">
+          <h1 className="font-display text-[32px] font-bold leading-10">{title}</h1>
+          <p className="text-[17px] leading-6 text-[#5e5e5e]">{description}</p>
+        </div>
       </div>
+      <Button busy={busy} onClick={onContinue}>{label}</Button>
     </main>
   );
 }

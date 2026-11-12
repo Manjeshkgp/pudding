@@ -87,7 +87,8 @@ export function navigationRedirect(
     legacyOnboardingPages.has(path) || /^\/crew\/[^/]+(?:\/edit)?$/.test(path);
   const guest = guestPages.has(path);
   const parent = isParentPage(path);
-  const child = ["/home", "/earn", "/money", "/quest", "/scan"].includes(path);
+  const child = ["/home", "/earn", "/money", "/savings", "/quest", "/scan"]
+    .includes(path);
   const shared =
     path === "/inbox" ||
     path === "/purchases" ||
@@ -125,18 +126,12 @@ export function navigationRedirect(
       path === "/onboarding/email"
     )
       return null;
-    if (
-      state.childrenStage &&
-      ["/onboarding/add-kid", "/onboarding/children"].includes(path)
-    )
-      return path === "/onboarding/children" && !state.childCount
-        ? state.nextRoute
-        : null;
-    if (
-      state.childrenStage &&
-      /^\/onboarding\/children\/[^/]+\/edit$/.test(path)
-    )
-      return null;
+    if (state.childrenStage || state.nextRoute === "/onboarding/plan") {
+      if (path === "/onboarding/children")
+        return state.childrenStage && !state.childCount ? state.nextRoute : null;
+      if (path === "/onboarding/add-kid" || /^\/onboarding\/children\/[^/]+\/edit$/.test(path))
+        return null;
+    }
     return path === state.nextRoute ? null : state.nextRoute;
   }
   if (guest) {

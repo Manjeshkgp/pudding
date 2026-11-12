@@ -4,8 +4,6 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/auth-guard";
-import { computeGoalProjection } from "@/services/goals.service";
-import { ensureLessonsAndBadgesSeeded } from "@/services/education.service";
 
 async function upcomingTasks(familyId: string, childId: string) {
   const now = new Date();
@@ -66,13 +64,8 @@ async function upcomingTasks(familyId: string, childId: string) {
  * GET /api/child/home
  * Age-banded Child Home Dashboard endpoint (FR-3.2, FR-11.1, FR-11.3, FR-11.4):
  * Strictly scoped to the authenticated child (never exposes parent financial details or family budget).
- * Returns:
- * - Age band UI mode (`YOUNG_6_9`, `TWEEN_10_13`, `TEEN_14_17`)
- * - Wallet Spend and Save balances
- * - Up to three assigned tasks awaiting submission
- * - Active savings goals with projections
- * - Recent spending requests & upcoming allowance
- * - Gamified streak, XP, level, badges, and optional sibling leaderboard (if enabled by parent FR-11.4)
+ * Returns the child profile, wallet balances, upcoming allowance,
+ * up to three assigned tasks, and savings goals.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -86,8 +79,6 @@ export async function GET(req: NextRequest) {
       throw new ApiError(400, "childId is required when viewing as a parent");
     }
 
-    await ensureLessonsAndBadgesSeeded();
-
     const child = await prisma.child.findUnique({
       where: { id: targetChildId },
       include: {
@@ -96,7 +87,6 @@ export async function GET(req: NextRequest) {
             id: true,
             name: true,
             currency: true,
-            siblingLeaderboardEnabled: true,
           },
         },
         wallet: true,
@@ -107,14 +97,6 @@ export async function GET(req: NextRequest) {
         savingsGoals: {
           where: { status: { in: ["ACTIVE", "COMPLETED"] } },
           orderBy: { createdAt: "desc" },
-        },
-        spendingRequests: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        },
-        earnedBadges: {
-          include: { badge: true },
-          orderBy: { earnedAt: "desc" },
         },
       },
     });
@@ -131,61 +113,7 @@ export async function GET(req: NextRequest) {
           ? "TWEEN_10_13"
           : "TEEN_14_17";
 
-    const [
-      assignedChores,
-      recentActivity,
-      unreadNotifications,
-      siblingLeaderboard,
-    ] = await Promise.all([
-      upcomingTasks(child.familyId, child.id),
-      prisma.ledgerEntry.findMany({
-        where: {
-          childId: child.id,
-          walletBucket: { in: ["SPEND", "SAVE", "GIVE"] },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 15,
-      }),
-      prisma.notification.findMany({
-        where: {
-          childId: child.id,
-          isRead: false,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
-      // Sibling leaderboard ONLY if enabled by parent (FR-11.4)
-      child.family.siblingLeaderboardEnabled
-        ? prisma.child.findMany({
-            where: { familyId: child.familyId },
-            select: {
-              id: true,
-              name: true,
-              avatar: true,
-              streakCount: true,
-              level: true,
-              xp: true,
-            },
-            orderBy: [{ xp: "desc" }, { streakCount: "desc" }],
-          })
-        : Promise.resolve(null),
-    ]);
-
-    const goalsWithProjection = await Promise.all(
-      child.savingsGoals.map(async (g) => ({
-        id: g.id,
-        name: g.name,
-        targetAmount: g.targetAmount.toString(),
-        currentAmount: g.currentAmount.toString(),
-        imageUrl: g.imageUrl,
-        deadline: g.deadline,
-        isLocked: g.isLocked,
-        matchPercentage: g.matchPercentage.toString(),
-        interestRateApr: g.interestRateApr.toString(),
-        status: g.status,
-        projection: await computeGoalProjection(g),
-      })),
-    );
+    const assignedChores = await upcomingTasks(child.familyId, child.id);
 
     return apiSuccess({
       profile: {
@@ -208,7 +136,6 @@ export async function GET(req: NextRequest) {
             purchaseReservedBalance:
               child.wallet.purchaseReservedBalance.toString(),
 
-            lockedPendingBalance: child.wallet.lockedPendingBalance.toString(),
             defaultSplitSpend: child.wallet.defaultSplitSpend,
             defaultSplitSave: child.wallet.defaultSplitSave,
 
@@ -223,33 +150,12 @@ export async function GET(req: NextRequest) {
           }
         : null,
       chores: assignedChores,
-      savingsGoals: goalsWithProjection,
-      spendingRequests: child.spendingRequests.map((r) => ({
-        id: r.id,
-        optionType: r.optionType,
-        amount: r.amount.toString(),
-        counterOfferAmount: r.counterOfferAmount?.toString() ?? null,
-        category: r.category,
-        purpose: r.purpose,
-        productName: r.productName,
-        recipientPaypalEmail: r.recipientPaypalEmail,
-        status: r.status,
-        parentComment: r.parentComment,
-        createdAt: r.createdAt,
+      savingsGoals: child.savingsGoals.map((goal) => ({
+        id: goal.id,
+        name: goal.name,
+        currentAmount: goal.currentAmount.toString(),
+        targetAmount: goal.targetAmount.toString(),
       })),
-      earnedBadges: child.earnedBadges,
-      recentActivity: recentActivity.map((e) => ({
-        id: e.id,
-        walletBucket: e.walletBucket,
-        amount: e.amount.toString(),
-        direction: e.direction,
-        type: e.type,
-        status: e.status,
-        description: e.description,
-        createdAt: e.createdAt,
-      })),
-      unreadNotifications,
-      siblingLeaderboard,
     });
   } catch (error) {
     return handleRouteError(error);

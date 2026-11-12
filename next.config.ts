@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
       ignore: [
         /\/api\/auth\/paypal\/callback/,
         /\/api\/auth\/paypal\/vault\/return/,
+        /\/onboarding\/plan/,
         /\/api\/family\/co-parents\/accept/,
         /\/accept-invite/,
       ],

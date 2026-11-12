@@ -8,6 +8,7 @@ export async function linkPayPalIdentity(
   userId: string,
   payerId: string,
   data: Omit<Prisma.UserUpdateInput, "paypalPayerId">,
+  expectedSetupTokenId?: string,
 ) {
   const updated = await prisma.$transaction(async (tx) => {
     // Serialize identity updates so concurrent live links cannot bypass ownership checks.
@@ -25,7 +26,12 @@ export async function linkPayPalIdentity(
         );
     }
     return tx.user.update({
-      where: { id: userId },
+      where: {
+        id: userId,
+        ...(expectedSetupTokenId
+          ? { paypalSetupTokenId: expectedSetupTokenId, paypalVaultId: null }
+          : {}),
+      },
       data: { ...data, paypalPayerId: payerId },
     });
   });

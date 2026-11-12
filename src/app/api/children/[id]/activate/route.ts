@@ -11,6 +11,7 @@ import {
   validateBody,
 } from "@/lib/api-response";
 import { verifyParentPin } from "@/lib/parent-pin";
+import { requireOnboardingSubscription } from "@/lib/onboarding";
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -34,7 +35,7 @@ export async function POST(
     await verifyParentPin(user.id, input.parentPin);
     const payer = await prisma.user.findFirst({
       where: { familyId: family.id, role: "PRIMARY_PARENT" },
-      select: { paypalVaultId: true },
+      select: { paypalVaultId: true, role: true, familyId: true, onboardingCompletedAt: true },
     });
     if (!payer?.paypalVaultId)
       throw new ApiError(
@@ -42,6 +43,7 @@ export async function POST(
         "The primary parent needs to save a PayPal wallet before activation.",
         "PAYPAL_WALLET_REQUIRED",
       );
+    await requireOnboardingSubscription(payer);
     const { id } = await context.params;
     const pin = String(randomInt(100000, 1000000));
     const pinHash = await bcrypt.hash(pin, 12);
@@ -62,9 +64,6 @@ export async function POST(
         create: {
           childId: id,
           ...rule,
-          autoApproveCategories: [],
-          safeListMerchants: [],
-          requireApprovalCategories: [],
         },
         update: rule,
       });

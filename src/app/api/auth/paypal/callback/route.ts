@@ -6,6 +6,8 @@ import { linkPayPalIdentity } from "@/lib/paypal-link";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { requireOnboardingSubscription } from "@/lib/onboarding";
+import prisma from "@/lib/prisma";
 
 function getStateSecret(): Uint8Array {
   return getJwtSecretKey();
@@ -35,26 +37,26 @@ interface PayPalUserInfoResponse {
  * only the verified email, payer_id, and verified_account status.
  */
 export async function GET(req: NextRequest) {
+  const wantsJson = req.nextUrl.searchParams.get("format") === "json" ||
+    req.headers.get("accept")?.includes("application/json");
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || "http://localhost:3000";
+  let returnPath = "/paypal";
+  function browserResult(result: "connected" | "cancelled" | "error") {
+    const url = new URL(returnPath, appUrl);
+    url.searchParams.set("paypal_oauth", result);
+    const response = NextResponse.redirect(url);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
+
   try {
     const { ipAddress, userAgent } = getRequestMeta(req);
     const code = req.nextUrl.searchParams.get("code");
     const state = req.nextUrl.searchParams.get("state");
     const errorParam = req.nextUrl.searchParams.get("error");
 
-    if (errorParam) {
-      throw new ApiError(
-        400,
-        `PayPal OAuth authorization denied: ${errorParam}`,
-        "PAYPAL_OAUTH_DENIED",
-      );
-    }
-
-    if (!code || !state) {
-      throw new ApiError(
-        400,
-        "Missing authorization code or state parameter",
-        "INVALID_OAUTH_CALLBACK",
-      );
+    if (!state) {
+      throw new ApiError(400, "Missing PayPal OAuth state.", "INVALID_OAUTH_CALLBACK");
     }
 
     let statePayload: {
@@ -88,6 +90,23 @@ export async function GET(req: NextRequest) {
         "INVALID_OAUTH_STATE",
       );
     }
+
+    returnPath = statePayload.returnTo === "settings" ? "/account/paypal" : "/paypal";
+    if (errorParam) {
+      if (!wantsJson && errorParam === "access_denied") return browserResult("cancelled");
+      throw new ApiError(400, "PayPal did not authorize the connection.", "PAYPAL_OAUTH_DENIED");
+    }
+    if (!code) {
+      throw new ApiError(400, "Missing PayPal authorization code.", "INVALID_OAUTH_CALLBACK");
+    }
+
+    const owner = await prisma.user.findUnique({
+      where: { id: statePayload.userId },
+      select: { familyId: true, role: true, onboardingCompletedAt: true },
+    });
+    if (!owner || owner.familyId !== statePayload.familyId)
+      throw new ApiError(403, "PayPal approval does not match a family account.", "INVALID_OAUTH_STATE");
+    await requireOnboardingSubscription(owner);
 
     const clientId = process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
@@ -300,10 +319,7 @@ export async function GET(req: NextRequest) {
       userAgent,
     });
 
-    const format = req.nextUrl.searchParams.get("format");
-    const acceptsJson = req.headers.get("accept")?.includes("application/json");
-
-    if (format === "json" || acceptsJson) {
+    if (wantsJson) {
       const response = apiSuccess(
         {
           paypalPayerId: updatedUser.paypalPayerId,
@@ -318,15 +334,16 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const returnPath =
-      statePayload.returnTo === "paypal"
-        ? "/paypal?paypal_oauth=connected"
-        : "/account/paypal?paypal_oauth=connected";
-    const response = NextResponse.redirect(`${appUrl}${returnPath}`);
-    await refreshSessionNavigation(req, response);
-    return response;
+    return browserResult("connected");
   } catch (error) {
-    return handleRouteError(error);
+    if (wantsJson) return handleRouteError(error);
+    if (error instanceof ApiError && error.code === "PAYPAL_TRIAL_REQUIRED") {
+      return NextResponse.redirect(new URL("/api/auth/navigation/refresh?returnTo=%2Fonboarding", appUrl));
+    }
+    logger.warn("paypal.oauth.return_failed", {
+      provider: "paypal",
+      errorCode: error instanceof ApiError ? error.code : "PAYPAL_OAUTH_CALLBACK_FAILED",
+    });
+    return browserResult("error");
   }
 }

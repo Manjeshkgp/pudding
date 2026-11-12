@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireParent } from "@/lib/auth-guard";
+import { requireOnboardingSubscription } from "@/lib/onboarding";
 import { logger } from "@/lib/logger";
 import { getPayPalAccessToken, getPayPalApiBaseUrl } from "@/lib/paypal";
 
@@ -17,6 +18,9 @@ type PayPalSetupTokenResponse = {
 export async function POST(req: NextRequest) {
   try {
     const { user } = await requireParent(req);
+    await requireOnboardingSubscription(user);
+    if (user.paypalVaultId)
+      return apiSuccess({ vaultConnected: true });
     if (!user.paypalIsVerified || !user.paypalPayerId) {
       throw new ApiError(
         403,
@@ -24,10 +28,6 @@ export async function POST(req: NextRequest) {
         "PAYPAL_IDENTITY_REQUIRED"
       );
     }
-    if (user.paypalVaultId) {
-      throw new ApiError(409, "A PayPal wallet is already connected", "PAYPAL_VAULT_ALREADY_CONNECTED");
-    }
-
     const accessToken = await getPayPalAccessToken();
     const apiBaseUrl = getPayPalApiBaseUrl();
     const appBaseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -75,9 +75,12 @@ export async function POST(req: NextRequest) {
     }
 
     const approveUrl = result.links?.find((link) => link.rel === "approve")?.href;
-    const approveHost = approveUrl ? new URL(approveUrl).hostname : "";
+    const approval = approveUrl ? URL.parse(approveUrl) : null;
     const paypalCustomerId = result.customer?.id ?? user.paypalCustomerId;
-    if (!result.id || !approveUrl || !approveHost.endsWith("paypal.com")) {
+    if (
+      !result.id || !approval || approval.protocol !== "https:" ||
+      (approval.hostname !== "paypal.com" && !approval.hostname.endsWith(".paypal.com"))
+    ) {
       throw new ApiError(502, "PayPal did not return a valid wallet approval link", "PAYPAL_APPROVAL_LINK_MISSING");
     }
     if (!paypalCustomerId) {
@@ -87,15 +90,28 @@ export async function POST(req: NextRequest) {
       throw new ApiError(502, `Unexpected PayPal setup status: ${result.status || "unknown"}`, "PAYPAL_SETUP_STATUS_UNEXPECTED");
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
+    const updated = await prisma.user.updateMany({
+      where: {
+        id: user.id,
+        paypalVaultId: null,
+        paypalSetupTokenId: user.paypalSetupTokenId,
+      },
       data: {
         paypalSetupTokenId: result.id,
         paypalCustomerId,
       },
     });
+    if (!updated.count) {
+      const current = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { paypalVaultId: true },
+      });
+      if (current?.paypalVaultId)
+        return apiSuccess({ vaultConnected: true });
+      throw new ApiError(409, "PayPal wallet setup changed. Use the latest approval link or try again.", "PAYPAL_SETUP_SUPERSEDED");
+    }
 
-    return apiSuccess({ approvalUrl: approveUrl }, 200, "PayPal wallet approval started");
+    return apiSuccess({ vaultConnected: false, approvalUrl: approval.href }, 200, "PayPal wallet approval started");
   } catch (error) {
     return handleRouteError(error);
   }

@@ -141,7 +141,6 @@ export async function GET(req: NextRequest) {
             spendBalance: child.wallet.spendBalance.toString(),
             saveBalance: child.wallet.saveBalance.toString(),
 
-            lockedPendingBalance: child.wallet.lockedPendingBalance.toString(),
             defaultSplitSpend: child.wallet.defaultSplitSpend,
             defaultSplitSave: child.wallet.defaultSplitSave,
 
@@ -219,7 +218,6 @@ export async function POST(req: NextRequest) {
             spendBalance: 0,
             saveBalance: 0,
 
-            lockedPendingBalance: 0,
             defaultSplitSpend: input.defaultSplitSpend,
             defaultSplitSave: input.defaultSplitSave,
           },
@@ -229,9 +227,6 @@ export async function POST(req: NextRequest) {
           data: {
             childId: child.id,
             dailyLimit: Number(process.env.DEMO_DEFAULT_DAILY_LIMIT_USD || 20),
-            autoApproveCategories: [],
-            safeListMerchants: [],
-            requireApprovalCategories: [],
           },
         });
 

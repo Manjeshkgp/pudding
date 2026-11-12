@@ -9,12 +9,15 @@ import SecurityScreen from "@/components/security-screen";
 import ProfileScreen from "@/components/profile-screen";
 import AddKidScreen from "@/components/add-kid-screen";
 import CrewScreen from "@/components/crew-screen";
+import PlanScreen from "@/components/plan-screen";
 import PaypalScreen from "@/components/paypal-screen";
 import PinScreen from "@/components/pin-screen";
 export default async function Page({
   params,
+  searchParams,
 }: {
   params: Promise<{ step: string }>;
+  searchParams: Promise<{ paypal?: string | string[] }>;
 }) {
   const { step } = await params;
   if (
@@ -29,6 +32,7 @@ export default async function Page({
       "profile",
       "add-kid",
       "children",
+      "plan",
       "paypal",
       "pin",
     ].includes(step)
@@ -56,6 +60,10 @@ export default async function Page({
       return <AddKidScreen mode="onboarding" />;
     case "children":
       return <CrewScreen mode="onboarding" />;
+    case "plan": {
+      const { paypal } = await searchParams;
+      return <PlanScreen paypalReturn={typeof paypal === "string" ? paypal : undefined} />;
+    }
     case "paypal":
       return <PaypalScreen mode="onboarding" />;
     case "pin":

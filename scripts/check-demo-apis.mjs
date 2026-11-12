@@ -137,6 +137,7 @@ try {
   await call(anonymous, "GET", "/api/purchases", undefined, 401);
   const fixture = await signup(parent, "main");
   const second = await signup(other, "other");
+  await call(parent, "POST", "/api/onboarding/subscription", { action: "start", plan: "monthly" }, 409);
   await call(parent, "PATCH", "/api/auth/me", {
     name: "Integration Parent Updated",
     avatar: "avatar-2",
@@ -230,6 +231,17 @@ try {
     201,
   );
   const child = added.child;
+  const onboarding = await call(parent, "POST", "/api/onboarding/children/complete", {});
+  assert.equal(onboarding.nextRoute, "/onboarding/plan");
+  await call(parent, "GET", "/api/auth/paypal/connect?mode=json", undefined, 403);
+  await call(parent, "POST", "/api/auth/paypal/vault/setup", {}, 403);
+  assert.equal(
+    (await call(parent, "POST", "/api/onboarding/subscription", {
+      action: "confirm",
+      subscriptionId: "I-UNTRUSTED",
+    })).status,
+    null,
+  );
   assert.equal(child.pinSet, false);
   assert.equal(
     (await call(parent, "GET", `/api/spending-rules/${child.id}`)).rule
@@ -243,24 +255,36 @@ try {
     { username: child.username, pin: "123456" },
     403,
   );
-  const source = await db.user.findFirst({
-    where: {
-      paypalVaultId: { not: null },
-      role: "PRIMARY_PARENT",
-      NOT: { email: { startsWith: "pudding-check-" } },
+  const source = pay
+    ? await db.user.findFirst({
+        where: {
+          paypalVaultId: { not: null },
+          role: "PRIMARY_PARENT",
+          NOT: { email: { startsWith: "pudding-check-" } },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { paypalVaultId: true },
+      })
+    : { paypalVaultId: "local-smoke-wallet" };
+  assert(source?.paypalVaultId, "A saved Sandbox wallet is required for --paypal.");
+  // Normal smoke checks verify wallet-gated activation with a local fixture.
+  await db.familySubscription.create({
+    data: {
+      familyId: fixture.familyId,
+      planKey: "monthly",
+      paypalPlanId: "P-LOCALSMOKE",
+      paypalSubscriptionId: "I-LOCALSMOKE",
+      status: "ACTIVE",
     },
-    orderBy: { updatedAt: "desc" },
-    select: { paypalVaultId: true },
   });
-  assert(
-    source?.paypalVaultId,
-    "A saved Sandbox wallet is required for activation checks.",
-  );
-  // Test-only fixture: use an existing Sandbox payment token, never log its value.
   await db.user.update({
     where: { id: fixture.id },
     data: { paypalVaultId: source.paypalVaultId, paypalIsVerified: true },
   });
+  assert.deepEqual(
+    await call(parent, "POST", "/api/auth/paypal/vault/setup", {}),
+    { vaultConnected: true },
+  );
   const activated = await call(
     parent,
     "POST",
@@ -373,13 +397,54 @@ try {
     ).spendBalance.equals("501.40"),
   );
   await call(childJar, "POST", `/api/chores/${choreId}/submit`, taskProof, 409);
-  await call(childJar, "POST", `/api/wallets/${child.id}/transfer`, {
-    mode: "BETWEEN_BUCKETS",
+  const transferPath = `/api/wallets/${child.id}/transfer`;
+  await call(parent, "POST", transferPath, {
+    mode: "FAMILY_TO_CHILD",
     amount: 10,
-    fromBucket: "SPEND",
-    toBucket: "SAVE",
+    targetBucket: "SAVE",
     idempotencyKey: key(),
   });
+  await call(
+    childJar,
+    "POST",
+    transferPath,
+    {
+      mode: "BETWEEN_BUCKETS",
+      amount: 2,
+      fromBucket: "SPEND",
+      toBucket: "SAVE",
+      idempotencyKey: key(),
+    },
+    400,
+  );
+  const conversion = {
+    mode: "SAVE_TO_SPEND",
+    amount: 2.25,
+    idempotencyKey: key(),
+  };
+  await call(parent, "POST", transferPath, conversion, 403);
+  await call(
+    childJar,
+    "POST",
+    transferPath,
+    { ...conversion, fromBucket: "SPEND", toBucket: "SAVE" },
+    400,
+  );
+  await call(childJar, "POST", transferPath, { ...conversion, amount: 0.001 }, 400);
+  await call(childJar, "POST", transferPath, { ...conversion, amount: 20 }, 400);
+  const converted = await call(childJar, "POST", transferPath, conversion);
+  assert.equal(converted.wallet.spendBalance, "503.65");
+  assert.equal(converted.wallet.saveBalance, "8.35");
+  const replay = await call(childJar, "POST", transferPath, conversion);
+  assert.equal(replay.idempotentReplay, true);
+  assert.deepEqual(replay.wallet, converted.wallet);
+  await call(childJar, "POST", transferPath, { ...conversion, amount: 3 }, 409);
+  assert.equal(
+    await db.ledgerEntry.count({
+      where: { childId: child.id, type: "BUCKET_TRANSFER" },
+    }),
+    2,
+  );
   const createdGoal = await call(
     childJar,
     "POST",
@@ -402,6 +467,18 @@ try {
   assert.equal(
     (await call(childJar, "GET", `/api/goals/${goalId}`)).currentAmount,
     "5",
+  );
+  const contribution = {
+    source: "PARENT_CONTRIBUTION",
+    amount: 3,
+    idempotencyKey: key(),
+  };
+  await call(childJar, "POST", `/api/goals/${goalId}/deposit`, contribution, 403);
+  await call(parent, "POST", `/api/goals/${goalId}/deposit`, contribution);
+  await call(parent, "POST", `/api/goals/${goalId}/deposit`, contribution);
+  assert.equal(
+    (await call(childJar, "GET", `/api/goals/${goalId}`)).currentAmount,
+    "8",
   );
   const withdrawalKey = key();
   await call(childJar, "POST", `/api/goals/${goalId}/withdraw`, {
@@ -544,13 +621,17 @@ try {
     where: { childId: child.id },
     data: { spendBalance: 0 },
   });
-  await call(
+  const confirmation = await call(
     parent,
     "POST",
     `/api/purchases/${payment.id}/review`,
     { action: "APPROVE" },
-    409,
   );
+  assert.deepEqual(confirmation.allowanceConfirmation, {
+    amount: "1.00",
+    currency: "USD",
+  });
+  assert.equal((await db.purchase.findUniqueOrThrow({ where: { id: payment.id } })).paypalOrderId, null);
   await db.wallet.update({
     where: { childId: child.id },
     data: { spendBalance: before.spendBalance },
@@ -734,19 +815,6 @@ try {
     "POST",
     `/api/goals/${protectedGoalId}/deposit`,
     { source: "SPEND_BUCKET", amount: gross, idempotencyKey: key() },
-    400,
-  );
-  await call(
-    childJar,
-    "POST",
-    `/api/wallets/${child.id}/transfer`,
-    {
-      mode: "BETWEEN_BUCKETS",
-      fromBucket: "SPEND",
-      toBucket: "SAVE",
-      amount: gross,
-      idempotencyKey: key(),
-    },
     400,
   );
   await db.$transaction(async (tx) => {

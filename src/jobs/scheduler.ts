@@ -2,7 +2,6 @@ import { reconcilePendingPurchases } from "./purchase-reconciliation.job";
 import cron from "node-cron";
 import { processDueAllowances } from "./allowance.job";
 import { processSavingsInterest } from "./interest.job";
-import { runPayPalReconciliation } from "./reconciliation.job";
 import { runWeeklyDigestJob } from "./weekly-digest.job";
 import { logger } from "@/lib/logger";
 
@@ -52,15 +51,6 @@ export function initInProcessCronJobs() {
       await processSavingsInterest();
     } catch (err) {
       logger.error("cron.job_failed", { job: "savings_interest" }, err);
-    }
-  });
-
-  // Run daily PayPal ledger reconciliation at 02:00 UTC (INT-4)
-  cron.schedule("0 2 * * *", async () => {
-    try {
-      await runPayPalReconciliation();
-    } catch (err) {
-      logger.error("cron.job_failed", { job: "paypal_reconciliation" }, err);
     }
   });
 

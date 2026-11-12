@@ -67,9 +67,6 @@ export async function GET(
           where: { status: "ACTIVE" },
           orderBy: { createdAt: "desc" },
         },
-        earnedBadges: {
-          include: { badge: true },
-        },
       },
     });
 
@@ -107,8 +104,6 @@ export async function GET(
             spendBalance: fullChild.wallet.spendBalance.toString(),
             saveBalance: fullChild.wallet.saveBalance.toString(),
 
-            lockedPendingBalance:
-              fullChild.wallet.lockedPendingBalance.toString(),
             defaultSplitSpend: fullChild.wallet.defaultSplitSpend,
             defaultSplitSave: fullChild.wallet.defaultSplitSave,
 
@@ -117,7 +112,6 @@ export async function GET(
         : null,
       allowanceRules: fullChild.allowanceRules,
       savingsGoals: fullChild.savingsGoals,
-      earnedBadges: fullChild.earnedBadges,
       ...(isParent ? { spendingRule: fullChild.spendingRule } : {}),
     });
   } catch (error) {
@@ -299,17 +293,6 @@ export async function DELETE(
         404,
         "Child not found in your family",
         "CHILD_NOT_FOUND",
-      );
-    }
-
-    if (
-      child.wallet &&
-      child.wallet.lockedPendingBalance.greaterThan(new Prisma.Decimal(0))
-    ) {
-      throw new ApiError(
-        409,
-        "Cannot remove child while a PayPal payment is still pending recipient claim",
-        "PENDING_PAYPAL_CLAIM_EXISTS",
       );
     }
 

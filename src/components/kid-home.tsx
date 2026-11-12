@@ -55,7 +55,7 @@ export default function KidHome() {
       icon: "/kid-home/savings.svg",
       label: "Your savings",
       amount: money(data?.wallet?.saveBalance),
-      href: "/money",
+      href: "/savings",
     },
     {
       icon: "/kid-home/quest.svg",

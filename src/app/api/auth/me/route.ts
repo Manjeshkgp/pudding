@@ -88,10 +88,6 @@ export async function GET(req: NextRequest) {
               familyCode: user.family.familyCode,
               currency: user.family.currency,
               unallocatedBudget: user.family.unallocatedBudget.toString(),
-              autoTopUpAmount: user.family.autoTopUpAmount?.toString() ?? null,
-              autoTopUpThreshold:
-                user.family.autoTopUpThreshold?.toString() ?? null,
-              autoTopUpSchedule: user.family.autoTopUpSchedule,
               siblingLeaderboardEnabled: user.family.siblingLeaderboardEnabled,
               isFrozen: user.family.isFrozen,
               children: user.family.children.map((child) => ({
@@ -110,8 +106,6 @@ export async function GET(req: NextRequest) {
                       purchaseReservedBalance:
                         child.wallet.purchaseReservedBalance.toString(),
 
-                      lockedPendingBalance:
-                        child.wallet.lockedPendingBalance.toString(),
                       defaultSplitSpend: child.wallet.defaultSplitSpend,
                       defaultSplitSave: child.wallet.defaultSplitSave,
 
@@ -129,9 +123,6 @@ export async function GET(req: NextRequest) {
       where: { id: session.sub },
       include: {
         wallet: true,
-        earnedBadges: {
-          include: { badge: true },
-        },
         family: {
           select: {
             id: true,
@@ -170,15 +161,12 @@ export async function GET(req: NextRequest) {
               purchaseReservedBalance:
                 child.wallet.purchaseReservedBalance.toString(),
 
-              lockedPendingBalance:
-                child.wallet.lockedPendingBalance.toString(),
               defaultSplitSpend: child.wallet.defaultSplitSpend,
               defaultSplitSave: child.wallet.defaultSplitSave,
 
               isFrozen: child.wallet.isFrozen,
             }
           : null,
-        earnedBadges: child.earnedBadges,
       },
       family: {
         id: child.family.id,

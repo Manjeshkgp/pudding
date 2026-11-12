@@ -349,6 +349,18 @@ type Goal = {
   status: string;
   isLocked: boolean;
 };
+
+function GoalProgress({ goal }: { goal: Goal }) {
+  return (
+    <progress
+      aria-label={`Savings progress for ${goal.name}`}
+      className="h-3 w-full appearance-none overflow-hidden rounded-full bg-[#f3f3f3] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#f3f3f3] [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-black [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-black"
+      value={Number(goal.currentAmount)}
+      max={Number(goal.targetAmount)}
+    />
+  );
+}
+
 export function GoalsScreen() {
   const me = useRemote<Me>("/api/auth/me");
   const action = useAction();
@@ -446,11 +458,7 @@ export function GoalsScreen() {
           <p>
             {money(g.currentAmount)} of {money(g.targetAmount)}
           </p>
-          <progress
-            className="h-3 w-full accent-black"
-            value={Number(g.currentAmount)}
-            max={Number(g.targetAmount)}
-          />
+          <GoalProgress goal={g} />
           <ActionLink href={`/goals/${g.id}`}>View goal</ActionLink>
         </Card>
       ))}
@@ -485,11 +493,7 @@ export function GoalDetail({ id }: { id: string }) {
               {money(g.currentAmount)}
             </h2>
             <p>Saved toward {money(g.targetAmount)}</p>
-            <progress
-              className="h-3 w-full accent-black"
-              value={Number(g.currentAmount)}
-              max={Number(g.targetAmount)}
-            />
+            <GoalProgress goal={g} />
             <p>
               {g.isLocked
                 ? "Parent-locked savings"
@@ -517,8 +521,8 @@ export function GoalDetail({ id }: { id: string }) {
                 key.current = null;
               }}
             >
-              <option value="SAVE_BUCKET">Save wallet</option>
-              <option value="SPEND_BUCKET">Spend wallet</option>
+              <option value="SAVE_BUCKET">Savings</option>
+              <option value="SPEND_BUCKET">Spending Allowance</option>
               {me.data?.subjectType === "USER" && (
                 <option value="PARENT_CONTRIBUTION">
                   Family unallocated budget
@@ -544,24 +548,24 @@ export function GoalDetail({ id }: { id: string }) {
             >
               Save toward goal
             </Button>
-            <Button
-              secondary
-              busy={action.busy}
-              disabled={Number(g.currentAmount) <= 0}
-              onClick={() =>
-                void action.run(async () => {
-                  await postApi(`/api/goals/${id}/withdraw`, {
-                    destinationBucket: "SAVE",
-                    idempotencyKey: crypto.randomUUID(),
-                  });
-                  remote.reload();
-                }, "Savings returned to the Save wallet.")
-              }
-            >
-              {g.isLocked && me.data?.subjectType === "CHILD"
-                ? "Ask parent to unlock"
-                : "Return savings to wallet"}
-            </Button>
+            {me.data?.subjectType === "USER" && (
+              <Button
+                secondary
+                busy={action.busy}
+                disabled={Number(g.currentAmount) <= 0}
+                onClick={() =>
+                  void action.run(async () => {
+                    await postApi(`/api/goals/${id}/withdraw`, {
+                      destinationBucket: "SAVE",
+                      idempotencyKey: crypto.randomUUID(),
+                    });
+                    remote.reload();
+                  }, "Money returned to Savings.")
+                }
+              >
+                Return to Savings
+              </Button>
+            )}
           </Card>
         </>
       )}

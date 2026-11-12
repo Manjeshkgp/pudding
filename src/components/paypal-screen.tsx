@@ -9,6 +9,7 @@ import { ChevronLeftIcon } from "@/components/icons";
 import { AVATARS } from "@/components/avatar-sheet";
 import PaypalMark from "@/components/paypal-mark";
 import { getApi, postApi } from "@/lib/client-api";
+import PayPalSuccessScreen from "@/components/connecting-screen";
 
 // Link PayPal identity, then save the Sandbox wallet for approved demo purchases.
 function UserFilled() {
@@ -60,6 +61,9 @@ const STEPS = [
   { Icon: EyeScan, text: "Review the payment permissions." },
   { Icon: DollarCircle, text: "Allow payments through your PayPal account." },
 ];
+type WalletSetupResult =
+  | { vaultConnected: true }
+  | { vaultConnected: false; approvalUrl: string };
 
 export default function PaypalScreen({
   mode = "management",
@@ -82,22 +86,8 @@ export default function PaypalScreen({
     } catch {}
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("paypal_oauth") === "connected") {
-      setMessage(
-        "PayPal account linked. Continue to approve saving the wallet.",
-      );
-    } else if (params.get("paypal_vault") === "connected") {
-      setMessage("Your PayPal wallet is connected and ready for the demo.");
-    } else if (params.get("paypal_vault") === "cancelled") {
-      setMessage(
-        "PayPal wallet setup was cancelled. You can try again when ready.",
-      );
-    } else if (params.get("paypal_vault") === "error") {
-      setError(
-        "PayPal could not finish connecting the wallet. Please try again.",
-      );
-    }
-
+    const vaultResult = params.get("paypal_vault");
+    const oauthResult = params.get("paypal_oauth");
     let active = true;
     getApi<{
       subjectType: string;
@@ -107,6 +97,18 @@ export default function PaypalScreen({
         if (!active || subjectType !== "USER" || !user) return;
         setPaypalVerified(user.paypalIsVerified);
         setVaultConnected(user.paypalVaultConnected);
+        if (user.paypalVaultConnected) return;
+        if (vaultResult === "error" || vaultResult === "connected") {
+          setError("PayPal wallet setup could not be confirmed. Please try again.");
+        } else if (vaultResult === "cancelled") {
+          setMessage("PayPal wallet setup was cancelled. You can try again when ready.");
+        } else if (oauthResult === "cancelled") {
+          setMessage("PayPal sign-in was cancelled. You can try again when ready.");
+        } else if (oauthResult === "error") {
+          setError("We couldn’t link your PayPal account. Please try signing in again.");
+        } else if (oauthResult === "connected" && !user.paypalIsVerified) {
+          setError("PayPal hasn’t verified this account. Try again with a verified Sandbox account.");
+        }
       })
       .catch(() => {
         if (active)
@@ -125,22 +127,32 @@ export default function PaypalScreen({
   async function connectPayPal() {
     if (loading || connecting) return;
     setError("");
+    setMessage("");
     if (vaultConnected) {
-      router.replace(mode === "onboarding" ? "/onboarding/pin" : "/account");
+      if (mode === "onboarding") {
+        setConnecting(true);
+        window.location.replace("/api/auth/navigation/refresh?returnTo=%2Fonboarding");
+      } else router.replace("/account");
       return;
     }
-    if (!paypalVerified) {
-      window.location.assign("/api/auth/paypal/connect?returnTo=paypal");
-      return;
-    }
-
     setConnecting(true);
     try {
-      const result = await postApi<{ approvalUrl: string }>(
+      if (!paypalVerified) {
+        const returnTo = mode === "onboarding" ? "paypal" : "settings";
+        const { authorizationUrl } = await getApi<{ authorizationUrl: string }>(
+          `/api/auth/paypal/connect?mode=json&returnTo=${returnTo}`,
+        );
+        window.location.assign(authorizationUrl);
+        return;
+      }
+      const result = await postApi<WalletSetupResult>(
         "/api/auth/paypal/vault/setup",
         {},
       );
-      window.location.assign(result.approvalUrl);
+      if (result.vaultConnected) {
+        setVaultConnected(true);
+        setConnecting(false);
+      } else window.location.assign(result.approvalUrl);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -149,6 +161,34 @@ export default function PaypalScreen({
       );
       setConnecting(false);
     }
+  }
+
+  if (!loading && vaultConnected) {
+    return (
+      <PayPalSuccessScreen
+        key="wallet-saved"
+        title="PayPal wallet saved"
+        description={mode === "onboarding"
+          ? "Your wallet is ready for approved Sandbox purchases. Set your parent PIN next."
+          : "Your wallet is ready for approved Sandbox purchases."}
+        animation="paypal-connection"
+        label="Continue"
+        busy={connecting}
+        onContinue={connectPayPal}
+      />
+    );
+  }
+  if (!loading && paypalVerified && !error && !message) {
+    return (
+      <PayPalSuccessScreen
+        key="paypal-linked"
+        title="PayPal account linked"
+        description="Approve saving your wallet so it can fund approved Sandbox purchases."
+        label="Continue to save wallet"
+        busy={connecting}
+        onContinue={connectPayPal}
+      />
+    );
   }
 
   return (
@@ -238,34 +278,6 @@ export default function PaypalScreen({
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 px-4 pb-[max(40px,env(safe-area-inset-bottom))] pt-4">
-        {vaultConnected && (
-          <button
-            type="button"
-            disabled={loading || connecting}
-            className="mb-3 flex h-[52px] w-full items-center justify-center rounded-full bg-[#f3f3f3] px-5 font-medium"
-            onClick={async () => {
-              if (connecting) return;
-              setConnecting(true);
-              setError("");
-              try {
-                const result = await postApi<{ approvalUrl: string }>(
-                  "/api/auth/paypal/vault/setup",
-                  {},
-                );
-                window.location.assign(result.approvalUrl);
-              } catch (e) {
-                setError(
-                  e instanceof Error
-                    ? e.message
-                    : "Unable to save wallet again.",
-                );
-                setConnecting(false);
-              }
-            }}
-          >
-            Save wallet again
-          </button>
-        )}
         <div className="rounded-3xl bg-[#f3f3f3]">
           <button
             type="button"
@@ -274,13 +286,15 @@ export default function PaypalScreen({
             aria-busy={loading || connecting}
             className="flex h-[52px] w-full items-center justify-center rounded-full bg-black px-5 text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-white disabled:opacity-60"
           >
-            {loading || connecting
-              ? "Connecting…"
-              : vaultConnected
-                ? "Continue"
+            {loading
+              ? "Checking PayPal…"
+              : connecting
+                ? "Opening PayPal…"
                 : paypalVerified
-                  ? "Save PayPal wallet"
-                  : "Connect PayPal"}
+                  ? "Try saving wallet again"
+                  : error || message
+                    ? "Try PayPal sign-in again"
+                    : "Connect PayPal"}
           </button>
         </div>
       </div>

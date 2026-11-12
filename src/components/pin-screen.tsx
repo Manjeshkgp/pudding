@@ -80,9 +80,9 @@ export default function PinScreen() {
       setToast(Date.now());
       return;
     }
-    postApi("/api/auth/parent/pin", { newPin: pin })
-      .then(() => {
-        router.replace("/family");
+    postApi<{ nextRoute: string }>("/api/auth/parent/pin", { newPin: pin })
+      .then(({ nextRoute }) => {
+        router.replace(nextRoute);
         router.refresh();
       })
       .catch((e: unknown) => {

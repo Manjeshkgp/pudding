@@ -204,7 +204,6 @@ export function renderWeeklyDigestEmailHtml(params: {
     totalSpent: string;
     totalSaved: string;
     choresCompleted: number;
-    lessonsCompleted: number;
   }>;
 }): string {
   const rowsHtml = params.childrenSummaries
@@ -222,7 +221,6 @@ export function renderWeeklyDigestEmailHtml(params: {
           </tr>
           <tr>
             <td><strong>Chores Done:</strong> ${child.choresCompleted}</td>
-            <td><strong>Lessons Completed:</strong> ${child.lessonsCompleted}</td>
           </tr>
         </table>
       </div>

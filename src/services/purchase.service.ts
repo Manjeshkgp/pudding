@@ -564,16 +564,23 @@ export async function payPurchase(
   }
   return finishPaidPurchase(p, order!, parentId);
 }
-export async function reconcilePurchase(id: string) {
+export async function reconcilePurchase(id: string, expectedCaptureId?: string) {
   const p = await prisma.purchase.findUniqueOrThrow({ where: { id } });
   if (p.status === "PAID") return p;
   if (p.status !== "PROCESSING" || !p.paypalOrderId)
     throw new ApiError(409, "Payment is not ready for confirmation.");
   const order = await getPayPalOrderDetails(p.paypalOrderId);
-  if (!completedCapture(order, p))
+  const capture = completedCapture(order, p);
+  if (!capture)
     throw new ApiError(
       503,
       "PayPal has not confirmed a completed payment yet.",
+    );
+  if (expectedCaptureId && capture.id !== expectedCaptureId)
+    throw new ApiError(
+      409,
+      "PayPal capture does not match the confirmed order.",
+      "WEBHOOK_CAPTURE_MISMATCH",
     );
   return finishPaidPurchase(p, order, p.reviewedByUserId || undefined);
 }

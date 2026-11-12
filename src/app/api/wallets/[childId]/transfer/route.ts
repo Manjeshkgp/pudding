@@ -10,7 +10,7 @@ import {
 } from "@/lib/api-response";
 import { requireChildOrFamilyParent, requireParent } from "@/lib/auth-guard";
 import {
-  moveBetweenChildBuckets,
+  convertSavingsToSpend,
   transferFromFamilyToChild,
 } from "@/services/ledger.service";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
@@ -26,20 +26,17 @@ const transferSchema = z.discriminatedUnion("mode", [
     idempotencyKey: z.string().trim().min(4).max(128).optional(),
   }),
   z.object({
-    mode: z.literal("BETWEEN_BUCKETS"),
-    amount: z.number().positive("Amount must be greater than 0").max(10000),
-    fromBucket: z.enum(["SPEND", "SAVE"]),
-    toBucket: z.enum(["SPEND", "SAVE"]),
-    description: z.string().trim().max(200).optional(),
-    idempotencyKey: z.string().trim().min(4).max(128).optional(),
-  }),
+    mode: z.literal("SAVE_TO_SPEND"),
+    amount: z.number().positive().max(10000).multipleOf(0.01),
+    idempotencyKey: z.string().trim().min(4).max(128),
+  }).strict(),
 ]);
 
 /**
  * POST /api/wallets/[childId]/transfer
  * Supports two atomic transfer modes:
  * 1. FAMILY_TO_CHILD (FR-2.3): Parent moves money from Family Unallocated Budget to Child's Wallet instantly.
- * 2. BETWEEN_BUCKETS (FR-3.1): Child or Parent moves money between child's own Spend and Save buckets.
+ * 2. SAVE_TO_SPEND: A child moves savings into their own Spend allowance.
  */
 export async function POST(
   req: NextRequest,
@@ -127,41 +124,37 @@ export async function POST(
       );
     }
 
-    // BETWEEN_BUCKETS mode (allowed for the Child themselves or a Parent in the family)
     const { session, child, isParent } = await requireChildOrFamilyParent(
       req,
       childId,
     );
 
-    const idempotencyKey =
-      input.idempotencyKey ||
-      headerIdempotencyKey ||
-      `bucket-move:${child.id}:${Date.now()}`;
+    if (isParent) {
+      throw new ApiError(
+        403,
+        "Only the child can move their savings",
+        "CHILD_ONLY",
+      );
+    }
 
-    const result = await moveBetweenChildBuckets({
+    const result = await convertSavingsToSpend({
       familyId: child.familyId,
       childId: child.id,
-      fromBucket: input.fromBucket,
-      toBucket: input.toBucket,
       amount: input.amount,
-      idempotencyKey,
-      actorUserId: isParent ? session.sub : undefined,
-      actorChildId: !isParent ? session.sub : undefined,
-      description: input.description,
+      idempotencyKey: input.idempotencyKey,
     });
 
     if (!result.idempotentReplay) {
       await writeAuditLog({
         familyId: child.familyId,
-        actorUserId: isParent ? session.sub : null,
-        actorChildId: !isParent ? session.sub : null,
+        actorChildId: session.sub,
         actorRole: session.role,
         action: "CHILD_BUCKET_TRANSFER",
         targetType: "Wallet",
         targetId: result.wallet.id,
         details: {
-          fromBucket: input.fromBucket,
-          toBucket: input.toBucket,
+          fromBucket: "SAVE",
+          toBucket: "SPEND",
           amount: input.amount,
         },
         ipAddress,
@@ -179,7 +172,7 @@ export async function POST(
         idempotentReplay: result.idempotentReplay,
       },
       200,
-      `Moved $${input.amount.toFixed(2)} from ${input.fromBucket} to ${input.toBucket}`,
+      `Moved $${input.amount.toFixed(2)} from Savings to Spend`,
     );
   } catch (error) {
     return handleRouteError(error);

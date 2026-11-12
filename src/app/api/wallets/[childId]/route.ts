@@ -68,7 +68,6 @@ export async function GET(
         spendBalance: wallet.spendBalance.toString(),
         saveBalance: wallet.saveBalance.toString(),
 
-        lockedPendingBalance: wallet.lockedPendingBalance.toString(),
         totalBucketBalance: totalBucketBalance.toString(),
         totalInSavingsGoals: goalsTotal.toString(),
         netWorth: totalBucketBalance.plus(goalsTotal).toString(),

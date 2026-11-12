@@ -75,6 +75,7 @@ export async function requestApi<T>(
         "SIGNUP_SESSION_EXPIRED",
         "SIGNUP_SESSION_REQUIRED",
         "SIGNUP_SESSION_INVALID",
+        "PAYPAL_TRIAL_REQUIRED",
       ].includes(result?.error?.code || "")
     ) {
       sessionRecoveryStarted = true;

@@ -1,4 +1,3 @@
-import { refreshSessionNavigation } from "@/lib/refresh-navigation";
 import { linkPayPalIdentity } from "@/lib/paypal-link";
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
@@ -6,6 +5,8 @@ import { ApiError } from "@/lib/api-response";
 import { getPayPalAccessToken, getPayPalApiBaseUrl } from "@/lib/paypal";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { requireOnboardingSubscription } from "@/lib/onboarding";
+import { getSessionFromRequest } from "@/lib/jwt";
 
 type PayPalSetupToken = { id: string; status: string };
 type PayPalPaymentToken = {
@@ -25,30 +26,72 @@ function appUrl(path: string) {
   );
 }
 
+async function walletIsSaved(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { paypalVaultId: true },
+  });
+  return Boolean(user?.paypalVaultId);
+}
+
+function walletConnected(signedIn: boolean) {
+  // Continue refreshes the signed navigation state after the confirmation.
+  const response = NextResponse.redirect(
+    appUrl(signedIn ? "/paypal?paypal_vault=connected" : "/login"),
+  );
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
+
 /** Confirms the approved setup token and persists the reusable PayPal payment token. */
 export async function GET(req: NextRequest) {
+  const session = await getSessionFromRequest(req);
+  const signedInParent =
+    session?.subjectType === "USER" &&
+    (session.role === "PRIMARY_PARENT" || session.role === "CO_PARENT")
+      ? session.sub
+      : null;
+  let savingUserId: string | undefined;
   try {
     const setupTokenId =
       req.nextUrl.searchParams.get("approval_token_id") ||
       req.nextUrl.searchParams.get("setup_token_id") ||
       req.nextUrl.searchParams.get("token");
-    if (!setupTokenId)
+    if (!setupTokenId) {
+      if (signedInParent && await walletIsSaved(signedInParent))
+        return walletConnected(true);
       throw new ApiError(
         400,
         "PayPal did not return a setup token",
         "PAYPAL_SETUP_TOKEN_MISSING",
       );
+    }
 
     const user = await prisma.user.findFirst({
       where: { paypalSetupTokenId: setupTokenId },
     });
-    if (!user)
+    if (!user) {
+      // The setup token is consumed once the wallet is saved. A repeated
+      // browser return can recover from the authenticated parent's wallet.
+      if (signedInParent && await walletIsSaved(signedInParent))
+        return walletConnected(true);
+      if (!session) return NextResponse.redirect(appUrl("/login"));
       throw new ApiError(
         404,
         "No pending PayPal wallet setup matches this approval",
         "PAYPAL_SETUP_NOT_FOUND",
       );
+    }
+    if (session && signedInParent !== user.id)
+      throw new ApiError(
+        403,
+        "PayPal approval belongs to a different account.",
+        "PAYPAL_SETUP_OWNER_MISMATCH",
+      );
 
+    await requireOnboardingSubscription(user);
+    if (user.paypalVaultId) return walletConnected(Boolean(signedInParent));
+    savingUserId = user.id;
     const accessToken = await getPayPalAccessToken();
     const apiBaseUrl = getPayPalApiBaseUrl();
     const setupResponse = await fetch(
@@ -120,15 +163,20 @@ export async function GET(req: NextRequest) {
         "PayPal payer identity is missing",
         "PAYPAL_PROFILE_INCOMPLETE",
       );
-    const updatedUser = await linkPayPalIdentity(user.id, payerId, {
-      paypalVaultId: paymentToken.id,
-      paypalCustomerId: paymentToken.customer?.id ?? user.paypalCustomerId,
-      paypalVerifiedEmail:
-        paymentToken.payment_source?.paypal?.email_address?.toLowerCase() ??
-        user.paypalVerifiedEmail,
-      paypalLinkedAt: user.paypalLinkedAt ?? new Date(),
-      paypalSetupTokenId: null,
-    });
+    const updatedUser = await linkPayPalIdentity(
+      user.id,
+      payerId,
+      {
+        paypalVaultId: paymentToken.id,
+        paypalCustomerId: paymentToken.customer?.id ?? user.paypalCustomerId,
+        paypalVerifiedEmail:
+          paymentToken.payment_source?.paypal?.email_address?.toLowerCase() ??
+          user.paypalVerifiedEmail,
+        paypalLinkedAt: user.paypalLinkedAt ?? new Date(),
+        paypalSetupTokenId: null,
+      },
+      setupTokenId,
+    );
     const { ipAddress, userAgent } = getRequestMeta(req);
     await writeAuditLog({
       familyId: updatedUser.familyId,
@@ -142,12 +190,10 @@ export async function GET(req: NextRequest) {
       userAgent,
     });
 
-    const response = NextResponse.redirect(
-      appUrl("/paypal?paypal_vault=connected"),
-    );
-    await refreshSessionNavigation(req, response);
-    return response;
+    return walletConnected(Boolean(signedInParent));
   } catch (error) {
+    if (savingUserId && await walletIsSaved(savingUserId).catch(() => false))
+      return walletConnected(Boolean(signedInParent));
     const code =
       error instanceof ApiError ? error.code : "PAYPAL_VAULT_CALLBACK_FAILED";
     if (error instanceof ApiError) {

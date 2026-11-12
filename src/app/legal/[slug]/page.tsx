@@ -72,6 +72,7 @@ export default async function LegalPage({
   // Only accept known in-app destinations so a crafted query cannot create an open redirect.
   const backHref = [
     "/onboarding/setup",
+    "/onboarding/plan",
     "/onboarding/paypal",
     "/account",
     "/account/paypal",
