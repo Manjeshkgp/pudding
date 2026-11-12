@@ -24,7 +24,7 @@ const MERCHANT = "Pixel Quest";
 const BALANCE = "$25.00";
 const BILL = [
   { name: "Item 1(x2)", price: "$11.90", amount: "$11.90" },
-  { name: "Item 1", price: "$11.90", amount: "$11.90" },
+  { name: "Item 1", price: "$11.90", amount: "$11.90", flagged: true },
   { name: "Item 3", price: "$11.90", amount: "$11.90" },
 ];
 const BILL_TOTAL = "$11.90";
@@ -94,9 +94,9 @@ function SoftButton({
   );
 }
 
-function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function PageHeader({ title, onBack, color = "text-[#222]" }: { title: string; onBack: () => void; color?: string }) {
   return (
-    <div className="flex items-center gap-3 px-4 pb-3 pt-[max(20px,env(safe-area-inset-top))]">
+    <div className="sticky top-0 z-20 flex items-center gap-3 bg-white px-4 pb-3 pt-[max(20px,env(safe-area-inset-top))]">
       <button
         type="button"
         aria-label="Back"
@@ -105,7 +105,7 @@ function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
       >
         <ChevronLeftIcon className="size-6" />
       </button>
-      <h1 className="min-w-px flex-1 py-2.5 font-display text-xl font-semibold leading-[22px] tracking-[-0.2px] text-[#222]">
+      <h1 className={`min-w-px flex-1 py-2.5 font-display text-xl font-semibold leading-[22px] tracking-[-0.2px] ${color}`}>
         {title}
       </h1>
       <HelpLink
@@ -212,10 +212,10 @@ export default function PurchaseRequest() {
                 <div className="flex items-start gap-2 rounded-2xl bg-[#eff4fe] p-4">
                   <TickCircleIcon className="size-6 shrink-0" />
                   <div className="flex min-w-px flex-1 flex-col justify-center gap-1">
-                    <p className="text-[15px] leading-[22px] tracking-[-0.15px] text-black">
+                    <p className="text-[17px] leading-[25px] tracking-[-0.17px] text-black">
                       {LIMIT_NOTE}
                     </p>
-                    <p className="text-[13px] font-medium leading-[15px] tracking-[-0.13px] text-[#276ef1]">
+                    <p className="text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-[#276ef1]">
                       {LIMIT_LEFT}
                     </p>
                   </div>
@@ -234,20 +234,7 @@ export default function PurchaseRequest() {
     return (
       <main className="min-h-dvh bg-white">
         <div className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col">
-          <div className="flex items-center gap-3 px-4 pb-3 pt-[max(20px,env(safe-area-inset-top))]">
-            <button
-              type="button"
-              aria-label="Back"
-              onClick={() => setStep("modal")}
-              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white shadow-[0px_8px_24px_0px_rgba(0,0,0,0.12)]"
-            >
-              <ChevronLeftIcon className="size-6" />
-            </button>
-            <h1 className="min-w-px flex-1 py-2.5 text-center font-display text-xl font-semibold leading-[22px] tracking-[-0.2px] text-black">
-              Purchase request
-            </h1>
-            <span className="size-11 shrink-0" aria-hidden="true" />
-          </div>
+          <PageHeader title="Purchase request" color="text-black" onBack={() => setStep("modal")} />
 
           <div className="flex flex-col items-center gap-3 px-4 pt-10">
             <KidChip size="md" />
@@ -317,19 +304,19 @@ export default function PurchaseRequest() {
                 <div className="flex min-w-px flex-1 flex-col gap-3">
                   <p className="text-[13px] leading-[18px] tracking-[-0.13px]">Items</p>
                   {BILL.map((b, i) => (
-                    <p key={i} className="text-[15px] leading-[22px] tracking-[-0.15px]">{b.name}</p>
+                    <p key={i} className={`text-[15px] leading-[22px] tracking-[-0.15px] ${"flagged" in b && b.flagged ? "text-[#de1135]" : ""}`}>{b.name}</p>
                   ))}
                 </div>
                 <div className="flex w-[70px] shrink-0 flex-col gap-3">
                   <p className="text-[13px] leading-[18px] tracking-[-0.13px]">Price</p>
                   {BILL.map((b, i) => (
-                    <p key={i} className="text-[15px] leading-[22px] tracking-[-0.15px]">{b.price}</p>
+                    <p key={i} className={`text-[15px] leading-[22px] tracking-[-0.15px] ${"flagged" in b && b.flagged ? "text-[#de1135]" : ""}`}>{b.price}</p>
                   ))}
                 </div>
                 <div className="flex w-[70px] shrink-0 flex-col gap-3 text-right">
                   <p className="text-[13px] leading-[18px] tracking-[-0.13px]">Amount</p>
                   {BILL.map((b, i) => (
-                    <p key={i} className="text-[15px] leading-[22px] tracking-[-0.15px]">{b.amount}</p>
+                    <p key={i} className={`text-[15px] leading-[22px] tracking-[-0.15px] ${"flagged" in b && b.flagged ? "text-[#de1135]" : ""}`}>{b.amount}</p>
                   ))}
                 </div>
               </div>
