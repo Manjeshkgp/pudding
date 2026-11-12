@@ -8,10 +8,11 @@ import { generateUniqueFamilyCode } from "@/lib/codes";
 import { FULL_COPARENT_PERMISSIONS } from "@/lib/auth-guard";
 import { setSessionCookie, signSessionToken } from "@/lib/jwt";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { avatarIds, defaultAvatarId } from "@/lib/avatars";
 
 const completeSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
-  avatar: z.enum(["avatar-1", "avatar-2", "avatar-3", "avatar-4", "avatar-5", "avatar-6"]).default("avatar-1"),
+  avatar: z.enum(avatarIds).default(defaultAvatarId),
   familyName: z.string().trim().min(2).max(100).optional(),
   currency: z.string().trim().length(3).default("USD"),
 });

@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/auth-guard";
 import { purchaseUsage, startOfPurchaseWeek } from "@/lib/purchase-usage";
+import { scheduledAllowanceFrequencies } from "@/lib/allowance-frequencies";
 
 async function upcomingTasks(familyId: string, childId: string) {
   const now = new Date();
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest) {
         wallet: true,
         spendingRule: { select: { weeklyLimit: true } },
         allowanceRules: {
-          where: { status: "ACTIVE" },
+          where: { status: "ACTIVE", frequency: { in: [...scheduledAllowanceFrequencies] } },
           orderBy: { nextRunAt: "asc" },
         },
         savingsGoals: {

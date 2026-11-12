@@ -20,6 +20,7 @@ export default function KidNav() {
   const pathname = usePathname();
   const reduceMotion = useReducedMotion();
   const active = TABS.find((t) => t.href && pathname.startsWith(t.href))?.id;
+  if (pathname === "/scan") return null;
 
   const button = (t: (typeof TABS)[number]) => {
     const inner = (

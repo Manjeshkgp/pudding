@@ -226,7 +226,7 @@ export default function PaypalScreen({
             <span className="absolute left-0 top-0 size-16 overflow-hidden rounded-full bg-[#ffd7ef]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/images/profile/avatar-2.svg"
+                src={AVATARS[me].src}
                 alt=""
                 className="size-full"
               />

@@ -13,6 +13,7 @@ import {
 } from "@/lib/api-response";
 import { requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { avatarIds, defaultAvatarId } from "@/lib/avatars";
 import {
   calculateChildAge,
   childPinSchema,
@@ -31,7 +32,7 @@ const createChildSchema = z
         (value) => parseChildBirthDate(value) !== null,
         "Enter a valid date of birth",
       ),
-    avatar: z.string().trim().max(100).default("default-kid"),
+    avatar: z.enum(avatarIds).default(defaultAvatarId),
     theme: z.string().trim().max(50).default("ocean"),
     pin: childPinSchema.optional(),
     defaultSplitSpend: z.number().int().min(0).max(100).default(70),

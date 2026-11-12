@@ -11,11 +11,15 @@ import { requireParent } from "@/lib/auth-guard";
 import { computeNextAllowanceRunAt } from "@/jobs/allowance.job";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { chorePeriod } from "@/lib/chore-period";
+import {
+  isScheduledAllowanceFrequency,
+  scheduledAllowanceFrequencies,
+} from "@/lib/allowance-frequencies";
 
 const updateAllowanceSchema = z.object({
   amount: z.number().positive().multipleOf(0.01).max(5000).optional(),
   frequency: z
-    .enum(["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "CUSTOM_DAY"])
+    .enum(scheduledAllowanceFrequencies)
     .optional(),
   dayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
   dayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
@@ -56,6 +60,9 @@ export async function PATCH(
       throw new ApiError(409, "This allowance schedule has been stopped.");
 
     const nextFrequency = input.frequency ?? existing.frequency;
+    if ((input.status ?? existing.status) === "ACTIVE" &&
+        !isScheduledAllowanceFrequency(nextFrequency))
+      throw new ApiError(400, "Choose weekly or monthly before activating this schedule.");
     const nextDayOfWeek =
       input.dayOfWeek !== undefined ? input.dayOfWeek : existing.dayOfWeek;
     const nextDayOfMonth =

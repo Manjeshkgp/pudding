@@ -422,29 +422,13 @@ try {
     amount: 2.25,
     idempotencyKey: key(),
   };
-  await call(parent, "POST", transferPath, conversion, 403);
-  await call(
-    childJar,
-    "POST",
-    transferPath,
-    { ...conversion, fromBucket: "SPEND", toBucket: "SAVE" },
-    400,
-  );
-  await call(childJar, "POST", transferPath, { ...conversion, amount: 0.001 }, 400);
-  await call(childJar, "POST", transferPath, { ...conversion, amount: 20 }, 400);
-  const converted = await call(childJar, "POST", transferPath, conversion);
-  assert.equal(converted.wallet.spendBalance, "503.65");
-  assert.equal(converted.wallet.saveBalance, "8.35");
-  const replay = await call(childJar, "POST", transferPath, conversion);
-  assert.equal(replay.idempotentReplay, true);
-  assert.deepEqual(replay.wallet, converted.wallet);
-  await call(childJar, "POST", transferPath, { ...conversion, amount: 3 }, 409);
-  assert.equal(
-    await db.ledgerEntry.count({
-      where: { childId: child.id, type: "BUCKET_TRANSFER" },
-    }),
-    2,
-  );
+  await call(parent, "POST", transferPath, conversion, 400);
+  await call(childJar, "POST", transferPath, conversion, 400);
+  const unchangedWallet = await db.wallet.findUniqueOrThrow({
+    where: { childId: child.id },
+  });
+  assert(unchangedWallet.spendBalance.equals("501.40"));
+  assert(unchangedWallet.saveBalance.equals("10.60"));
   const createdGoal = await call(
     childJar,
     "POST",
@@ -480,6 +464,10 @@ try {
     (await call(childJar, "GET", `/api/goals/${goalId}`)).currentAmount,
     "8",
   );
+  await call(childJar, "POST", `/api/goals/${goalId}/withdraw`, {
+    destinationBucket: "SPEND",
+    idempotencyKey: key(),
+  }, 400);
   const withdrawalKey = key();
   await call(childJar, "POST", `/api/goals/${goalId}/withdraw`, {
     destinationBucket: "SAVE",

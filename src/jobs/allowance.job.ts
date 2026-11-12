@@ -7,6 +7,10 @@ import {
 import { writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { chorePeriod } from "@/lib/chore-period";
+import {
+  isScheduledAllowanceFrequency,
+  scheduledAllowanceFrequencies,
+} from "@/lib/allowance-frequencies";
 
 /**
  * Calculates the next execution timestamp for an allowance rule based on its frequency (FR-4.1).
@@ -96,6 +100,7 @@ export async function processDueAllowances(
     where: {
       id: scope.ruleId,
       status: "ACTIVE",
+      frequency: { in: [...scheduledAllowanceFrequencies] },
       nextRunAt: { lte: now },
       ...(scope.familyId ? { child: { familyId: scope.familyId } } : {}),
     },
@@ -112,7 +117,8 @@ export async function processDueAllowances(
             where: { id: due.id },
             include: { child: { include: { family: true } } },
           });
-          if (!rule || rule.status !== "ACTIVE" || rule.nextRunAt > now) return;
+          if (!rule || rule.status !== "ACTIVE" || rule.nextRunAt > now ||
+              !isScheduledAllowanceFrequency(rule.frequency)) return;
           const { child } = rule;
           const { family } = child;
           if (family.isFrozen || child.isFrozen) return;

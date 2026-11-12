@@ -60,7 +60,7 @@ function KidChip({
         <img
           src={avatar.src}
           alt=""
-          className="absolute left-[-2.8px] top-[2.5px] size-7 max-w-none rotate-[16deg]"
+          className="size-full"
         />
       </span>
       <span className="text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black">

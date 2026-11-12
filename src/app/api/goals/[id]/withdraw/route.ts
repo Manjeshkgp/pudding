@@ -14,13 +14,13 @@ import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 
 const withdrawGoalSchema = z.object({
   amount: z.number().positive().max(50000).optional(), // Omit to withdraw full goal amount
-  destinationBucket: z.enum(["SPEND", "SAVE"]).default("SPEND"),
+  destinationBucket: z.literal("SAVE").default("SAVE"),
   idempotencyKey: z.string().trim().min(4).max(128).optional(),
 });
 
 /**
  * POST /api/goals/[id]/withdraw
- * Withdraws funds from a Savings Goal back into the child's SPEND or SAVE bucket.
+ * Withdraws funds from a Savings Goal back into the child's Savings balance.
  * Enforces FR-6.6: If `isLocked == true` and the caller is a Child, blocks withdrawal
  * until a parent sets `unlockApprovedByParent = true` (or a parent performs the withdrawal).
  */
@@ -97,9 +97,6 @@ export async function POST(
       );
     }
 
-    const bucketField =
-      input.destinationBucket === "SPEND" ? "spendBalance" : "saveBalance";
-
     const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${child.familyId} FOR UPDATE`;
       await tx.$queryRaw`SELECT "id" FROM "SavingsGoal" WHERE "id" = ${goalId} FOR UPDATE`;
@@ -139,7 +136,7 @@ export async function POST(
       const updatedWallet = await tx.wallet.update({
         where: { childId: child.id },
         data: {
-          [bucketField]: { increment: withdrawAmount },
+          saveBalance: { increment: withdrawAmount },
         },
       });
 

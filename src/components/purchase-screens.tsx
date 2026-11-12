@@ -15,7 +15,6 @@ import {
   AppScreen,
   Card,
   Button,
-  Field,
   Select,
   Status,
   Empty,
@@ -650,9 +649,6 @@ export function ActivityScreen({
   const me = useRemote<Me>(child ? "/api/auth/me" : null);
   const wallet = me.data?.child?.wallet;
   const currency = me.data?.family.currency;
-  const [converting, setConverting] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [activityVersion, setActivityVersion] = useState(0);
   return (
     <AppScreen
       title={child ? "Your money" : "Family activity"}
@@ -671,16 +667,6 @@ export function ActivityScreen({
           </p>
           <ActionLink href="/scan">Scan a purchase</ActionLink>
           <ActionLink href="/savings">Your savings</ActionLink>
-          <Button
-            secondary
-            onClick={() => {
-              setNotice("");
-              setConverting(true);
-            }}
-          >
-            Move savings to Spend
-          </Button>
-          <Status notice={notice} />
         </Card>
       )}
       <FeedSwitcher
@@ -693,123 +679,7 @@ export function ActivityScreen({
           },
         ]}
       />
-      {tab === "wallet" ? (
-        <WalletActivity key={activityVersion} />
-      ) : (
-        <PurchaseList />
-      )}
-      {converting && me.data?.child && wallet && (
-        <SavingsConversionDialog
-          childId={me.data.child.id}
-          savings={wallet.saveBalance}
-          frozen={wallet.isFrozen}
-          currency={currency}
-          onClose={() => setConverting(false)}
-          onDone={(amount) => {
-            me.reload();
-            setActivityVersion((version) => version + 1);
-            setNotice(`Moved ${money(amount, currency)} to Spend.`);
-            setConverting(false);
-          }}
-        />
-      )}
+      {tab === "wallet" ? <WalletActivity /> : <PurchaseList />}
     </AppScreen>
-  );
-}
-function SavingsConversionDialog({
-  childId,
-  savings,
-  frozen,
-  currency,
-  onClose,
-  onDone,
-}: {
-  childId: string;
-  savings: string;
-  frozen?: boolean;
-  currency?: string;
-  onClose: () => void;
-  onDone: (amount: number) => void;
-}) {
-  const [amount, setAmount] = useState("");
-  const action = useAction();
-  const key = useRef<string | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const max = Math.min(10000, Number(savings));
-  const canMove = !frozen && max > 0;
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
-
-  return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="savings-conversion-title"
-      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-[32px] bg-white p-6 text-black shadow-xl backdrop:bg-black/50"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!action.busy) onClose();
-      }}
-    >
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!canMove) return;
-          void action.run(async () => {
-            key.current ||= crypto.randomUUID();
-            await postApi(`/api/wallets/${childId}/transfer`, {
-              mode: "SAVE_TO_SPEND",
-              amount: Number(amount),
-              idempotencyKey: key.current,
-            });
-            onDone(Number(amount));
-          });
-        }}
-      >
-        <h2
-          id="savings-conversion-title"
-          className="font-display text-2xl font-bold"
-        >
-          Move savings to Spend
-        </h2>
-        <p>{money(savings, currency)} available in Savings</p>
-        {canMove ? (
-          <>
-            <Field
-              label={`Amount (${currency ?? "USD"})`}
-              type="number"
-              inputMode="decimal"
-              min="0.01"
-              max={max}
-              step="0.01"
-              required
-              disabled={action.busy}
-              value={amount}
-              onChange={(event) => {
-                setAmount(event.target.value);
-                key.current = null;
-                action.setError("");
-              }}
-            />
-            <Status error={action.error} />
-            <Button type="submit" busy={action.busy} disabled={!amount}>
-              Move to Spend
-            </Button>
-          </>
-        ) : (
-          <p className="text-sm text-[#5e5e5e]">
-            {frozen
-              ? "You can move savings when your parent unpauses your wallet."
-              : "Once you have some savings, you can move them to Spend here."}
-          </p>
-        )}
-        <Button type="button" secondary disabled={action.busy} onClick={onClose}>
-          {canMove ? "Cancel" : "Close"}
-        </Button>
-      </form>
-    </dialog>
   );
 }
