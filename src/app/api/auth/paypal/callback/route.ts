@@ -39,7 +39,10 @@ interface PayPalUserInfoResponse {
 export async function GET(req: NextRequest) {
   const wantsJson = req.nextUrl.searchParams.get("format") === "json" ||
     req.headers.get("accept")?.includes("application/json");
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || "http://localhost:3000";
+  // Use the runtime server URL, falling back to the origin PayPal called.
+  // NEXT_PUBLIC_* values can be frozen into the build and point OAuth users
+  // at an obsolete host such as localhost.
+  const appUrl = process.env.APP_BASE_URL || req.nextUrl.origin;
   let returnPath = "/paypal";
   function browserResult(result: "connected" | "cancelled" | "error") {
     const url = new URL(returnPath, appUrl);
