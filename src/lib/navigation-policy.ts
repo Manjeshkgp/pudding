@@ -61,7 +61,6 @@ export function isParentPage(path: string) {
     "/approve",
     "/chores",
     "/allowances",
-    "/activity",
     "/goals",
     "/coparent",
     "/topup",
@@ -88,10 +87,10 @@ export function navigationRedirect(
     legacyOnboardingPages.has(path) || /^\/crew\/[^/]+(?:\/edit)?$/.test(path);
   const guest = guestPages.has(path);
   const parent = isParentPage(path);
-  const child = ["/home", "/earn", "/money", "/savings", "/quest", "/scan"]
+  const child = ["/home", "/earn", "/money", "/savings", "/quest", "/scan", "/me"]
     .includes(path);
   const shared =
-    path === "/inbox" ||
+    path === "/inbox" || path === "/activity" ||
     path === "/purchases" ||
     path.startsWith("/purchases/");
   if (!(onboarding || legacy || guest || parent || child || shared))

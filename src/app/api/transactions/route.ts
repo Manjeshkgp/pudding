@@ -7,7 +7,7 @@ import {
   WalletBucket,
 } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { apiSuccess, handleRouteError } from "@/lib/api-response";
+import { ApiError, apiSuccess, handleRouteError } from "@/lib/api-response";
 import { requireAuth, requireParent } from "@/lib/auth-guard";
 
 /**
@@ -31,6 +31,9 @@ export async function GET(req: NextRequest) {
     ) as LedgerStatus | null;
     const startDateParam = req.nextUrl.searchParams.get("startDate");
     const endDateParam = req.nextUrl.searchParams.get("endDate");
+    if ((startDateParam && Number.isNaN(new Date(startDateParam).getTime())) ||
+        (endDateParam && Number.isNaN(new Date(endDateParam).getTime())))
+      throw new ApiError(400, "Invalid activity date.", "INVALID_ACTIVITY_DATE");
     const limit = Math.min(
       200,
       Math.max(1, Number(req.nextUrl.searchParams.get("limit") || 50)),

@@ -137,6 +137,9 @@ export async function GET(req: NextRequest) {
       child: {
         id: child.id,
         name: child.name,
+        firstName: child.firstName,
+        lastName: child.lastName,
+        dateOfBirth: child.dateOfBirth?.toISOString().slice(0, 10) ?? null,
         username: child.username,
         age: child.age,
         avatar: child.avatar,

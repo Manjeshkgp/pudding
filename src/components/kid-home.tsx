@@ -172,7 +172,7 @@ export default function KidHome() {
 
         {/* Header */}
         <header className="fixed inset-x-0 top-0 z-20 mx-auto flex w-full max-w-[520px] items-center justify-between bg-gradient-to-b from-black/40 to-transparent px-4 pb-[60px] pt-[max(24px,env(safe-area-inset-top))]">
-          <div className="flex items-center gap-2">
+          <Link href="/me" aria-label="Your profile" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={avatar.src}
@@ -182,7 +182,7 @@ export default function KidHome() {
             <h1 className="font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-white">
               {data?.profile.name.split(" ")[0] || "Your pudding"}
             </h1>
-          </div>
+          </Link>
           <Link href="/inbox" className="flex items-center justify-center gap-1 rounded-full bg-white px-3 py-2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
