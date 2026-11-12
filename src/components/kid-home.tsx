@@ -102,8 +102,11 @@ export default function KidHome() {
             <div className="absolute left-[123.54px] top-[200.41px] size-[300px]">
               <Lottie
                 src="/lottie/confident-cat.json"
-                loop
-                autoplay={!reduceMotion}
+                // With "reduce motion" on (common in phone power-saving mode) show one still frame
+                // instead of leaving the cat blank.
+                loop={!reduceMotion}
+                autoplay
+                segment={reduceMotion ? [0, 1] : undefined}
                 className="size-full"
               />
             </div>
