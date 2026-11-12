@@ -17,6 +17,29 @@ export interface PushDispatchResult {
 }
 
 let vapidConfigured = false;
+const development = process.env.NODE_ENV === "development";
+
+function approvalRequestId(payload: PushMessagePayload) {
+  const { purchaseId, href } = payload.data ?? {};
+  if (
+    typeof purchaseId === "string" &&
+    href === `/approve/${encodeURIComponent(purchaseId)}`
+  )
+    return purchaseId;
+}
+
+function providerFailureReason(body: unknown) {
+  if (typeof body !== "string") return undefined;
+  return /VapidPkHashMismatch|BadJwtToken|UNREGISTERED|NOT_FOUND|UNAUTHENTICATED|PERMISSION_DENIED|INVALID_ARGUMENT|SENDER_ID_MISMATCH/i.exec(
+    body,
+  )?.[0];
+}
+
+export function getWebPushPublicKey() {
+  return ensureWebVapidConfigured()
+    ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!.trim()
+    : null;
+}
 
 function ensureWebVapidConfigured(): boolean {
   if (vapidConfigured) return true;
@@ -57,20 +80,29 @@ async function sendWebVapidNotification(
   sub: PushSubscription,
   payload: PushMessagePayload,
 ): Promise<boolean> {
+  const requestId = development ? approvalRequestId(payload) : undefined;
+  const trace = requestId ? { requestId, subscriptionId: sub.id } : undefined;
   if (!sub.p256dh || !sub.auth) {
+    if (trace)
+      logger.debug("push.approval_skipped", {
+        ...trace,
+        outcome: "missing_browser_keys",
+      });
     return false;
   }
 
   if (!ensureWebVapidConfigured()) {
-    logger.info("push.mock_dispatch", {
+    logger.info("push.web_vapid_unavailable", {
       provider: "web_vapid",
+      ...trace,
       outcome: "not_sent_missing_configuration",
     });
     return false;
   }
 
   try {
-    await webpush.sendNotification(
+    if (trace) logger.debug("push.approval_sending", trace);
+    const response = await webpush.sendNotification(
       {
         endpoint: sub.endpoint,
         keys: {
@@ -83,12 +115,24 @@ async function sendWebVapidNotification(
         body: payload.body,
         data: payload.data || {},
         timestamp: Date.now(),
+        ...(trace && { debug: trace }),
       }),
       { timeout: 5000, TTL: 300 },
     );
+    logger.info("push.web_vapid_accepted", {
+      provider: "web_vapid",
+      outcome: "accepted_by_push_service",
+      httpStatus: response.statusCode,
+      ...trace,
+    });
     return true;
   } catch (err: unknown) {
-    const statusCode = (err as { statusCode?: number })?.statusCode;
+    const providerError = err as {
+      statusCode?: number;
+      body?: string;
+      code?: string;
+    } | null;
+    const statusCode = providerError?.statusCode;
     if (statusCode === 404 || statusCode === 410) {
       await prisma.pushSubscription
         .update({
@@ -103,6 +147,11 @@ async function sendWebVapidNotification(
         provider: "web_vapid",
         httpStatus: statusCode,
         subscriptionExpired: statusCode === 404 || statusCode === 410,
+        ...(trace && {
+          ...trace,
+          providerReason: providerFailureReason(providerError?.body),
+          transportCode: providerError?.code,
+        }),
       },
       err,
     );
@@ -170,6 +219,21 @@ export async function dispatchPushToTarget(params: {
       ...(params.platforms ? { platform: { in: params.platforms } } : {}),
     },
   });
+  const requestId = development ? approvalRequestId(params.payload) : undefined;
+  if (requestId) {
+    logger.debug("push.approval_subscriptions", {
+      requestId,
+      subscriptionCount: subscriptions.filter(
+        (sub) => sub.platform === "WEB_VAPID",
+      ).length,
+    });
+  }
+  if (params.userId && !subscriptions.length) {
+    logger.info("push.no_active_subscription", {
+      outcome: "not_sent",
+      requestId,
+    });
+  }
 
   let webVapidSent = 0;
   let mobileSent = 0;

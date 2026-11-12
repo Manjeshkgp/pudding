@@ -77,8 +77,8 @@ function PermissionSheet({ onAllow }: { onAllow: () => void }) {
                   Scan & pay with Pudding
                 </h2>
                 <p className="text-[17px] leading-[25px] tracking-[-0.17px]">
-                  Point your camera and tap Scan purchase to generate a sample invoice.
-                  You can review it before tapping Pay.
+                  Point your camera at a bill and tap Scan bill. Review the
+                  sample items and total before you request payment.
                 </p>
               </div>
             </div>
@@ -196,12 +196,12 @@ function ScanCamera({
           <BackButton fallback="/home" />
         </div>
         <h1 className="relative z-10 px-4 pb-8 pt-6 font-display text-[32px] font-bold leading-10 tracking-[-0.64px] text-white">
-          Pay with QR
+          Scan a bill
         </h1>
         <div className="flex flex-1 items-center justify-center">
           <ScanFrame live={live} />
         </div>
-        <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-3 px-4 pb-[max(97px,calc(env(safe-area-inset-bottom)+48px))] pt-6">
+        <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-3 px-4 pb-[calc(max(56px,env(safe-area-inset-bottom))+88px)] pt-6">
           {(cameraError || scanError) && (
             <p role="alert" className="text-center text-sm text-white">
               {cameraError || scanError}
@@ -222,7 +222,7 @@ function ScanCamera({
                   if (videoRef.current?.videoWidth) onScan();
                 }}
               >
-                Scan purchase
+                Scan bill
               </Button>
             )}
             {torchAvailable && live && (
@@ -270,7 +270,7 @@ export default function ScanScreen() {
     return <ScanCamera onScan={scan} scanning={action.busy} scanError={action.error} />;
 
   return (
-    <AppScreen title="Scan your purchase" back="/home" role="CHILD" color="#ffc091">
+    <AppScreen title="Scanned bill" back="/home" role="CHILD" color="#ffc091">
       <PurchaseScreen
         key={purchase.id}
         id={purchase.id}
@@ -287,7 +287,7 @@ export default function ScanScreen() {
           setPurchase(null);
         }}
       >
-        Scan another purchase
+        Scan another bill
       </Button>
     </AppScreen>
   );

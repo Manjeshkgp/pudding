@@ -147,6 +147,17 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
     const pushEnabled = pref ? pref.pushEnabled : true;
     const emailEnabled = pref ? pref.emailEnabled : true;
     const smsEnabled = pref ? pref.smsEnabled : false;
+    const purchaseId = input.data?.purchaseId;
+    if (
+      process.env.NODE_ENV === "development" &&
+      typeof purchaseId === "string" &&
+      input.data?.href === `/approve/${encodeURIComponent(purchaseId)}`
+    ) {
+      logger.debug("push.approval_inbox_created", {
+        requestId: purchaseId,
+        pushEnabled,
+      });
+    }
 
     if (typeof input.transactionAmount === "number" && pref) {
       const threshold = pref.notifyThresholdAmount

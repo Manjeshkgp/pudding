@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { requireParent } from "@/lib/auth-guard";
 import { apiSuccess, handleRouteError } from "@/lib/api-response";
+import { parentReviewStatuses } from "@/lib/purchase-review";
+import { countUnreadParentInbox } from "@/services/parent-inbox.service";
 export async function GET(req: NextRequest) {
   try {
     const { user, family } = await requireParent(req);
@@ -19,26 +21,14 @@ export async function GET(req: NextRequest) {
           where: {
             familyId: family.id,
             status: {
-              in: [
-                "WAITING_PARENT",
-                "APPROVED",
-                "PAYMENT_FAILED",
-                "PROCESSING",
-              ],
+              in: [...parentReviewStatuses, "PROCESSING"],
             },
           },
         }),
         prisma.choreSubmission.count({
           where: { chore: { familyId: family.id }, status: "PENDING" },
         }),
-        prisma.notification.count({
-          where: {
-            familyId: family.id,
-            childId: null,
-            isRead: false,
-            OR: [{ userId: null }, { userId: user.id }],
-          },
-        }),
+        countUnreadParentInbox(family.id, user.id),
       ]);
     const payer = await prisma.user.findFirst({
       where: { familyId: family.id, role: "PRIMARY_PARENT" },

@@ -3,6 +3,8 @@ import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { requireParent } from "@/lib/auth-guard";
 import { hasParentPermission } from "@/lib/co-parent-permissions";
+import { verifyParentPin } from "@/lib/parent-pin";
+import { canReviewPurchase } from "@/lib/purchase-review";
 import {
   ApiError,
   apiSuccess,
@@ -26,8 +28,15 @@ export async function POST(
       req,
       z.object({
         action: z.enum(["APPROVE", "DECLINE"]),
+        pin: z
+          .string()
+          .regex(/^\d{6}$/)
+          .optional(),
         reason: z.string().trim().max(300).optional(),
-        confirmedAllowance: z.string().regex(/^\d{1,10}\.\d{2}$/).optional(),
+        confirmedAllowance: z
+          .string()
+          .regex(/^\d{1,10}\.\d{2}$/)
+          .optional(),
       }),
     );
     if (input.action === "APPROVE") {
@@ -35,7 +44,14 @@ export async function POST(
         where: { id, familyId: family.id },
         select: { id: true },
       });
-      if (!purchase) throw new ApiError(404, "Invoice not found.");
+      if (!purchase) throw new ApiError(404, "Purchase not found.");
+      if (!input.pin)
+        throw new ApiError(
+          400,
+          "Enter your parent PIN to approve this purchase.",
+          "PIN_REQUIRED",
+        );
+      await verifyParentPin(user.id, input.pin);
       try {
         const paid = await payPurchase(id, user.id, {
           familyId: family.id,
@@ -58,15 +74,11 @@ export async function POST(
       await tx.$queryRaw`SELECT "id" FROM "Purchase" WHERE "id" = ${id} FOR UPDATE`;
       const purchase = await tx.purchase.findUnique({ where: { id } });
       if (!purchase || purchase.familyId !== family.id)
-        throw new ApiError(404, "Invoice not found.");
-      if (
-        !["WAITING_PARENT", "APPROVED", "PAYMENT_FAILED"].includes(
-          purchase.status,
-        )
-      )
+        throw new ApiError(404, "Purchase not found.");
+      if (!canReviewPurchase(purchase.status))
         throw new ApiError(
           409,
-          "This invoice is not waiting for a parent decision.",
+          "This purchase is not waiting for a parent decision.",
         );
       const updated = await tx.purchase.update({
         where: { id },

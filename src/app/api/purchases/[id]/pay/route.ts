@@ -17,10 +17,7 @@ export async function POST(
       await requireParent(req, "canApproveSpending");
     return apiSuccess({
       purchase: serializePurchase(
-        await payPurchase(
-          purchase.id,
-          session.subjectType === "USER" ? session.sub : undefined,
-        ),
+        await payPurchase(purchase.id),
       ),
     });
   } catch (e) {

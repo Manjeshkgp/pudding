@@ -1,5 +1,7 @@
 import { getApi, postApi, requestApi } from "@/lib/client-api";
 export async function enableWebPush(requestPermission = true) {
+  if (!window.isSecureContext)
+    throw new Error("Open Pudding over HTTPS or on localhost to connect browser push.");
   if (
     !("serviceWorker" in navigator) ||
     !("PushManager" in window) ||

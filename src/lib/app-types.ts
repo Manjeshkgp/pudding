@@ -43,16 +43,22 @@ export type InvoiceItem = {
 export type Purchase = {
   id: string;
   childId: string;
-  child?: { name: string };
+  child?: { name: string; avatar?: string };
   amount: string;
   currency: string;
   items: InvoiceItem[];
   status: string;
   decisionReason: string | null;
   aiDecision: string | null;
+  reviewedByUserId?: string | null;
   paypalOrderId?: string | null;
   createdAt: string;
   paidAt?: string | null;
+};
+export type PurchaseReviewDetails = {
+  canApprove: boolean;
+  pinSet: boolean;
+  availableSpend: string;
 };
 export type Chore = {
   id: string;

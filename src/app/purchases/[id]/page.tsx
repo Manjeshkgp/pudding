@@ -5,8 +5,7 @@ export default async function Page({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const viewer = await requirePage("/purchases");
-  return (
-    <PurchaseScreen id={(await params).id} parent={viewer.kind === "PARENT"} />
-  );
+  const { id } = await params;
+  const viewer = await requirePage(`/purchases/${encodeURIComponent(id)}`);
+  return <PurchaseScreen id={id} parent={viewer.kind === "PARENT"} />;
 }

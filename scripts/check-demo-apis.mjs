@@ -499,6 +499,9 @@ try {
       201,
     )
   ).purchase;
+  assert.equal(invoice.status, "CREATED");
+  assert.equal(invoice.paidAt, null);
+  assert(invoice.items.length > 0);
   assert.equal(
     (
       await call(
@@ -512,6 +515,17 @@ try {
     invoice.id,
   );
   await call(other, "GET", `/api/purchases/${invoice.id}`, undefined, 404);
+  const parentBill = await call(parent, "GET", `/api/purchases/${invoice.id}`);
+  assert.equal(parentBill.purchase.child.name, child.name);
+  assert.equal(parentBill.review.canApprove, true);
+  assert.equal(parentBill.review.pinSet, true);
+  const childBill = await call(childJar, "GET", `/api/purchases/${invoice.id}`);
+  assert.equal(childBill.review, undefined);
+  for (const viewer of [parent, childJar]) {
+    const activity = await call(viewer, "GET", "/api/purchases");
+    assert(!activity.items.some((item) => item.id === invoice.id));
+  }
+  await call(parent, "POST", `/api/purchases/${invoice.id}/decision`, {}, 403);
   await call(
     childJar,
     "POST",
@@ -527,9 +541,57 @@ try {
   );
   assert.equal(decision.purchase.status, "WAITING_PARENT");
   assert.equal(decision.purchase.aiDecision, "PARENT");
+  for (const viewer of [parent, childJar]) {
+    const activity = await call(viewer, "GET", "/api/purchases");
+    assert(activity.items.some((item) => item.id === invoice.id));
+  }
+  const requestNotification = (await call(parent, "GET", "/api/notifications"))
+    .notifications.find((item) => item.metadata?.purchaseId === invoice.id);
+  assert.equal(requestNotification?.metadata.href, `/approve/${invoice.id}`);
+  await call(parent, "POST", `/api/purchases/${invoice.id}/pay`, {}, 409);
+  await call(parent, "POST", `/api/purchases/${invoice.id}/review`, {
+    action: "APPROVE",
+  }, 400);
+  await call(parent, "POST", `/api/purchases/${invoice.id}/review`, {
+    action: "APPROVE",
+    pin: "000000",
+  }, 403);
+  // Previously blocked bills must still appear in Approvals and accept a parent decision.
+  await db.purchase.update({
+    where: { id: invoice.id },
+    data: { status: "AI_BLOCKED", aiDecision: "BLOCK" },
+  });
+  const approvals = await call(parent, "GET", "/api/purchases?view=approvals");
+  assert(approvals.items.some((item) => item.id === invoice.id));
+  await call(childJar, "POST", `/api/purchases/${invoice.id}/pay`, {}, 409);
   await call(parent, "POST", `/api/purchases/${invoice.id}/review`, {
     action: "DECLINE",
   });
+  const hasDecline = (item) =>
+    item.title === "Purchase declined" && item.metadata?.purchaseId === invoice.id;
+  assert((await call(childJar, "GET", "/api/notifications")).items.some(hasDecline));
+  const parentInbox = await call(parent, "GET", "/api/notifications");
+  assert(!parentInbox.items.some(hasDecline));
+  assert.equal(await db.notification.count({
+    where: { userId: fixture.id, type: "PURCHASE_UPDATE", title: "Purchase declined" },
+  }), 0);
+  await db.notification.create({
+    data: {
+      familyId: fixture.familyId,
+      userId: fixture.id,
+      type: "PURCHASE_UPDATE",
+      title: "Purchase declined",
+      message: "Historical outcome.",
+      metadata: { purchaseId: invoice.id },
+    },
+  });
+  const afterHistoricalDecline = await call(parent, "GET", "/api/notifications");
+  assert(!afterHistoricalDecline.items.some(hasDecline));
+  assert.equal(afterHistoricalDecline.unreadCount, parentInbox.unreadCount);
+  assert.equal(
+    (await call(parent, "GET", "/api/family/summary")).unreadNotifications,
+    parentInbox.unreadCount,
+  );
   await call(childJar, "POST", `/api/purchases/${invoice.id}/pay`, {}, 409);
   if (!process.env.GEMINI_API_KEY) {
     await call(parent, "PUT", `/api/spending-rules/${child.id}`, {
@@ -602,7 +664,7 @@ try {
     parent,
     "POST",
     `/api/purchases/${payment.id}/review`,
-    { action: "APPROVE" },
+    { action: "APPROVE", pin: "123456" },
     409,
   );
   assert.equal(
@@ -625,7 +687,7 @@ try {
     parent,
     "POST",
     `/api/purchases/${payment.id}/review`,
-    { action: "APPROVE" },
+    { action: "APPROVE", pin: "123456" },
   );
   assert.deepEqual(confirmation.allowanceConfirmation, {
     amount: "1.00",
@@ -717,7 +779,7 @@ try {
           parent,
           "POST",
           `/api/purchases/${id}/review`,
-          { action: "APPROVE" },
+          { action: "APPROVE", pin: "123456" },
           [200, 409],
         ),
       ),
@@ -734,6 +796,7 @@ try {
     sandboxOrderId = paid.paypalOrderId;
     await call(parent, "POST", `/api/purchases/${paid.id}/review`, {
       action: "APPROVE",
+      pin: "123456",
     });
     const [family, wallets, ledgerCount] = await Promise.all([
       db.family.findUniqueOrThrow({ where: { id: fixture.familyId } }),

@@ -78,7 +78,7 @@ export const TOPICS: Topic[] = [
         ],
         [
           "AI and parent review",
-          "Inside a positive limit, AI reviews the invoice. Purchases above a daily, weekly or per-purchase threshold go to the parent. Child usage periods use UTC; the shared family limit never resets.",
+          "Inside a positive limit, AI reviews the bill. Purchases above a daily, weekly or per-purchase threshold go to the parent. Child usage periods use UTC; the shared family limit never resets.",
         ],
       ]),
       art("Reset a kid’s PIN", [
@@ -99,26 +99,26 @@ export const TOPICS: Topic[] = [
     articles: [
       art("How payments work", [
         [
-          "Create an invoice",
-          "The child captures anything using the camera. The demo creates a random invoice from its sample catalog. It does not read a real store's QR code or pay that store.",
+          "Scan a bill",
+          "The child points the camera at a bill and taps Scan bill. The demo shows items and prices from its sample catalog on the same screen.",
         ],
         [
           "Review",
-          "AI can approve or block an invoice inside the child's controls. Otherwise the parent reviews it. AI unavailability also sends it to the parent.",
+          "The child taps Request to Pay. AI-approved bills proceed to payment. Bills blocked by AI or requiring a parent decision go to the parent's inbox and approvals queue.",
         ],
         [
           "Payment",
-          "An approval triggers a separate PayPal Sandbox payment using the primary parent's saved wallet. The invoice is marked paid only after a completed capture.",
+          "An approval triggers a PayPal Sandbox payment using the primary parent's saved wallet. The paid invoice appears after PayPal confirms the capture.",
         ],
       ]),
       art("A payment is pending", [
         [
           "Reserved allowance",
-          "If PayPal's result is not confirmed, the app holds capacity for that invoice so it cannot be spent twice.",
+          "While PayPal confirmation is pending, the app reserves the purchase amount.",
         ],
         [
           "Check confirmation",
-          "Open the invoice and choose Check payment confirmation. A known order may also be confirmed by a verified webhook or reconciliation job.",
+          "Open the purchase and choose Check payment confirmation. A known order may also be confirmed by a verified webhook or reconciliation job.",
         ],
         [
           "Unknown outcome",
@@ -128,11 +128,11 @@ export const TOPICS: Topic[] = [
       art("Approve or decline a purchase", [
         [
           "Your approval queue",
-          "Open Family, then Approvals. Choose an invoice to see its products, quantities, prices and total.",
+          "Open a purchase request from Approvals or the inbox to see its items, quantities, prices, total and reason for review.",
         ],
         [
           "Your decision",
-          "Approve & pay uses the saved primary-parent Sandbox wallet. Decline does not make a payment. An AI-blocked invoice cannot be overridden in this demo.",
+          "Tap Approve and confirm with your parent PIN to pay from the primary parent's saved Sandbox wallet. Decline closes the request.",
         ],
         [
           "Activity",
@@ -202,7 +202,7 @@ export const TOPICS: Topic[] = [
         ],
         [
           "Family privacy",
-          "Children see their own wallet and invoices. They cannot access another child's private data or the family spending-limit totals.",
+          "Children see their own wallet and purchases. They cannot access another child's private data or the family spending-limit totals.",
         ],
         [
           "Notifications",
@@ -242,7 +242,7 @@ export const TOPICS: Topic[] = [
         ],
         [
           "Capture anything",
-          "The hackathon demo does not require a specific QR. A camera capture triggers a random catalog invoice.",
+          "The camera is used to simulate scanning. Tapping Scan bill generates a sample bill from the demo catalog.",
         ],
         [
           "Try again",
@@ -252,7 +252,7 @@ export const TOPICS: Topic[] = [
       art("AI review is unavailable", [
         [
           "What happens",
-          "The invoice is sent to the parent for review with an explanation. The app does not invent an AI approval.",
+          "The bill is sent to the parent for review with an explanation.",
         ],
         [
           "Developer configuration",

@@ -58,6 +58,7 @@ export function isParentPage(path: string) {
     "/account",
     "/children",
     "/approvals",
+    "/approve",
     "/chores",
     "/allowances",
     "/activity",

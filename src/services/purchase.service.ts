@@ -12,6 +12,7 @@ import {
 } from "@/lib/paypal";
 import { logger } from "@/lib/logger";
 import { dispatchNotification } from "@/services/notification.service";
+import { isWaitingForParent, purchaseReviewPath } from "@/lib/purchase-review";
 
 export const catalog = [
   { name: "Notebook and pencils", category: "School", unitPrice: "6.50" },
@@ -42,10 +43,6 @@ export async function notifyPurchase(
   reason: string,
 ) {
   try {
-    const parents = await prisma.user.findMany({
-      where: { familyId: p.familyId },
-      select: { id: true },
-    });
     const common = {
       familyId: p.familyId,
       type: "PURCHASE_UPDATE",
@@ -53,18 +50,30 @@ export async function notifyPurchase(
       body: reason,
       data: { purchaseId: p.id, href: `/purchases/${p.id}` },
     };
-    await dispatchNotification({ ...common, childId: p.childId });
-    await Promise.allSettled(
-      parents.map((parent) =>
+    const childNotification = { ...common, childId: p.childId };
+    if (p.reviewedByUserId && ["PAID", "DECLINED"].includes(p.status)) {
+      await dispatchNotification(childNotification);
+      return;
+    }
+    const parents = await prisma.user.findMany({
+      where: { familyId: p.familyId },
+      select: { id: true },
+    });
+    await Promise.allSettled([
+      dispatchNotification(childNotification),
+      ...parents.map((parent) =>
         dispatchNotification({
           ...common,
           userId: parent.id,
+          ...(p.status === "WAITING_PARENT"
+            ? { data: { purchaseId: p.id, href: purchaseReviewPath(p.id) } }
+            : {}),
           ...(p.status === "PAID"
             ? { transactionAmount: p.amount.toNumber() }
             : {}),
         }),
       ),
-    );
+    ]);
   } catch (error) {
     logger.warn(
       "purchase.notification_failed",
@@ -74,7 +83,7 @@ export async function notifyPurchase(
   }
 }
 
-export async function createInvoice(childId: string, key: string) {
+export async function createBill(childId: string, key: string) {
   return prisma.$transaction(async (tx) => {
     const child = await tx.child.findUniqueOrThrow({
       where: { id: childId },
@@ -124,7 +133,7 @@ export async function createInvoice(childId: string, key: string) {
   });
 }
 
-export async function decideInvoice(id: string) {
+export async function decidePurchase(id: string) {
   const claimed = await prisma.purchase.updateMany({
     where: { id, status: "CREATED" },
     data: { status: "REVIEWING", processingAt: new Date() },
@@ -181,12 +190,7 @@ export async function decideInvoice(id: string) {
       currency: p.currency,
       ageBlockEnabled: rule?.ageBlockEnabled ?? true,
     });
-  const status =
-    decision.decision === "APPROVE"
-      ? "APPROVED"
-      : decision.decision === "BLOCK"
-        ? "AI_BLOCKED"
-        : "WAITING_PARENT";
+  const status = decision.decision === "APPROVE" ? "APPROVED" : "WAITING_PARENT";
   // An interrupted review may have already been routed to a parent. A late
   // model response must not overwrite that decision or a payment in progress.
   const saved = await prisma.purchase.updateMany({
@@ -202,8 +206,8 @@ export async function decideInvoice(id: string) {
   if (saved.count && updated.status === status && status !== "APPROVED")
     await notifyPurchase(
       updated,
-      status === "AI_BLOCKED"
-        ? "AI blocked a purchase"
+      decision.decision === "BLOCK"
+        ? "AI flagged a purchase for review"
         : "Purchase needs approval",
       decision.reason,
     );
@@ -238,7 +242,7 @@ export async function payPurchase(
 ) {
   const initial = await prisma.purchase.findUniqueOrThrow({ where: { id } });
   if (approval && initial.familyId !== approval.familyId)
-    throw new ApiError(404, "Invoice not found.");
+    throw new ApiError(404, "Purchase not found.");
   const claim = await prisma.$transaction(async (tx) => {
     // One family lock serializes capacity checks across all children.
     await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${initial.familyId} FOR UPDATE`;
@@ -253,16 +257,16 @@ export async function payPurchase(
       return { p, send: false, vaultId: "" };
     if (
       !["APPROVED", "PROCESSING", "PAYMENT_FAILED"].includes(p.status) &&
-      !(parentId && approval && p.status === "WAITING_PARENT")
+      !(parentId && approval && isWaitingForParent(p.status))
     )
       throw new ApiError(
         409,
-        "This invoice is not approved for payment.",
+        "This purchase is not approved for payment.",
         "PURCHASE_NOT_APPROVED",
       );
     if (
       !parentId &&
-      p.aiDecision !== "APPROVE" &&
+      (p.aiDecision !== "APPROVE" || p.reviewedByUserId) &&
       !(p.status === "PROCESSING" && p.reviewedByUserId)
     )
       throw new ApiError(
@@ -562,7 +566,7 @@ export async function payPurchase(
       },
     });
   }
-  return finishPaidPurchase(p, order!, parentId);
+  return finishPaidPurchase(p, order!, p.reviewedByUserId ?? parentId);
 }
 export async function reconcilePurchase(id: string, expectedCaptureId?: string) {
   const p = await prisma.purchase.findUniqueOrThrow({ where: { id } });

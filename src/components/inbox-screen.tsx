@@ -1,6 +1,5 @@
 "use client";
 import { ListEnd, usePagedList } from "@/components/paged-list";
-import { useRef } from "react";
 import {
   useRemote,
   useAction,
@@ -12,8 +11,9 @@ import {
   ActionLink,
 } from "@/components/app-ui";
 import { Me } from "@/lib/app-types";
-import { patchApi, requestApi } from "@/lib/client-api";
+import { patchApi } from "@/lib/client-api";
 import { taskSubmissionPath } from "@/lib/navigation-policy";
+import { purchaseReviewPath } from "@/lib/purchase-review";
 export default function InboxScreen() {
   const me = useRemote<Me>("/api/auth/me");
   const remote = usePagedList<{
@@ -24,36 +24,12 @@ export default function InboxScreen() {
     createdAt: string;
     metadata: {
       purchaseId?: string;
+      href?: string;
       goalId?: string;
       submissionId?: string;
     } | null;
   }>("/api/notifications");
   const action = useAction();
-  const marking = useRef(new Set<string>());
-  function showRead(id: string) {
-    remote.updateItems(
-      (items) =>
-        items.map((item) =>
-          item.id === id ? { ...item, isRead: true } : item,
-        ),
-      (count) => (count === undefined ? undefined : Math.max(0, count - 1)),
-    );
-  }
-  function markOpened(notification: { id: string; isRead: boolean }) {
-    if (notification.isRead || marking.current.has(notification.id)) return;
-    marking.current.add(notification.id);
-    void requestApi("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notificationIds: [notification.id] }),
-      keepalive: true,
-    })
-      .then(() => showRead(notification.id))
-      .catch(() =>
-        action.setError("Couldn’t mark this message as read. Try again."),
-      )
-      .finally(() => marking.current.delete(notification.id));
-  }
   return (
     <AppScreen
       title="Your inbox"
@@ -80,57 +56,56 @@ export default function InboxScreen() {
       {!remote.loading && !remote.error && remote.items.length === 0 && (
         <Empty>Your updates will appear here.</Empty>
       )}
-      {remote.items.map((n) => (
-        <Card
-          key={n.id}
-          className={n.isRead ? "" : "border-black bg-[#fff9db]"}
-        >
-          <p className="text-xs text-[#5e5e5e]">
-            {new Date(n.createdAt).toLocaleString()}
-          </p>
-          <h2 className="font-display text-xl font-bold">{n.title}</h2>
-          <p>{n.message}</p>
-          {n.metadata?.purchaseId && (
-            <ActionLink
-              href={`/purchases/${n.metadata.purchaseId}`}
-              onClick={() => markOpened(n)}
-            >
-              View invoice
-            </ActionLink>
-          )}
-          {n.metadata?.goalId && (
-            <ActionLink
-              href={`/goals/${n.metadata.goalId}`}
-              onClick={() => markOpened(n)}
-            >
-              View savings goal
-            </ActionLink>
-          )}
-          {n.metadata?.submissionId && me.data?.subjectType === "USER" && (
-            <ActionLink
-              href={taskSubmissionPath(n.metadata.submissionId)}
-              onClick={() => markOpened(n)}
-            >
-              Review task
-            </ActionLink>
-          )}
-          {!n.isRead && (
-            <button
-              className="self-start text-sm underline"
-              onClick={() =>
-                void action.run(async () => {
-                  await patchApi("/api/notifications", {
-                    notificationIds: [n.id],
-                  });
-                  showRead(n.id);
-                })
-              }
-            >
-              Mark as read
-            </button>
-          )}
-        </Card>
-      ))}
+      {remote.items.map((n) => {
+        const purchaseId = n.metadata?.purchaseId;
+        const reviewPath = purchaseId ? purchaseReviewPath(purchaseId) : null;
+        const review =
+          me.data?.subjectType === "USER" &&
+          reviewPath &&
+          (n.metadata?.href === reviewPath ||
+            [
+              "Purchase needs approval",
+              "Purchase needs your attention",
+              "AI blocked a purchase",
+            ].includes(n.title));
+        return (
+          <Card
+            key={n.id}
+            className={n.isRead ? "" : "border-black bg-[#fff9db]"}
+          >
+            <p className="text-xs text-[#5e5e5e]">
+              {new Date(n.createdAt).toLocaleString()}
+            </p>
+            <h2 className="font-display text-xl font-bold">{n.title}</h2>
+            <p>{n.message}</p>
+            {purchaseId && (
+              <ActionLink
+                href={review ? reviewPath : `/purchases/${purchaseId}`}
+              >
+                {review
+                  ? "Review purchase request"
+                  : n.title === "Purchase paid"
+                    ? "View invoice"
+                    : "View purchase"}
+              </ActionLink>
+            )}
+            {n.metadata?.goalId && (
+              <ActionLink
+                href={`/goals/${n.metadata.goalId}`}
+              >
+                View savings goal
+              </ActionLink>
+            )}
+            {n.metadata?.submissionId && me.data?.subjectType === "USER" && (
+              <ActionLink
+                href={taskSubmissionPath(n.metadata.submissionId)}
+              >
+                Review task
+              </ActionLink>
+            )}
+          </Card>
+        );
+      })}
       <ListEnd list={remote} />
     </AppScreen>
   );

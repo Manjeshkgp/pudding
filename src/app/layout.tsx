@@ -6,6 +6,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import MobileOnly from "@/components/mobile-only";
 import ClickFeedback from "@/components/click-feedback";
+import InstallAppPrompt from "@/components/install-app-prompt";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -18,6 +19,13 @@ export const metadata: Metadata = {
   title: "Pudding",
   description:
     "Teach children healthy money habits through safe, supervised earning, saving, and spending.",
+  applicationName: "Pudding",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/images/pudding-cat.svg",
+    shortcut: "/images/pudding-cat.svg",
+    apple: "/images/pudding-app-192.png",
+  },
 };
 
 export default async function RootLayout({
@@ -40,6 +48,7 @@ export default async function RootLayout({
         </div>
         <MobileOnly />
         <ClickFeedback />
+        <InstallAppPrompt />
       </body>
     </html>
   );

@@ -611,7 +611,7 @@ export default function ActivateWallet({ childId }: { childId: string }) {
             <div className="flex flex-col gap-[30px]">
               <MoneyField
                 label="Daily spending"
-                hint="Within this limit, AI reviews the invoice. Set 0 to ask you every time."
+                hint="Within this limit, AI reviews the bill. Set 0 to ask you every time."
                 value={daily}
                 onChange={setDaily}
               />

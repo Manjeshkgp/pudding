@@ -4,6 +4,12 @@ import Link from "next/link";
 import { ListEnd, usePagedList } from "@/components/paged-list";
 import { frequencyLabels, taskFrequencies } from "@/lib/chore-period";
 import { taskSubmissionPath } from "@/lib/navigation-policy";
+import {
+  canReviewPurchase,
+  isWaitingForParent,
+  purchaseReason,
+  purchaseReviewPath,
+} from "@/lib/purchase-review";
 import { AlertCircleIcon, SpinnerIcon } from "@/components/icons";
 import {
   AppScreen,
@@ -25,45 +31,21 @@ import {
 import { postApi } from "@/lib/client-api";
 
 const titles: Record<string, string> = {
-  CREATED: "Your invoice",
+  CREATED: "Your bill",
   REVIEWING: "Reviewing your purchase",
   APPROVED: "Purchase approved",
   WAITING_PARENT: "Waiting for your parent",
-  AI_BLOCKED: "Let’s pause this purchase",
   DECLINED: "Purchase declined",
   PROCESSING: "Confirming your payment",
   PAID: "All paid!",
   PAYMENT_FAILED: "Payment needs attention",
 };
 
-// Invoices are shared across roles. Keep the stored reason for the child and
-// adapt known guidance for parents, including invoices created earlier.
-const parentDecisionReasons: Record<string, string> = {
-  "Your parent needs to allocate more Spend allowance before this purchase can be paid.":
-    "This child needs more Spend allowance before payment can go through.",
-  "Your family spending limit is used up. Your parent needs to add a top-up.":
-    "The available family spending limit is too low for this purchase.",
-  "Your parent needs to review scanned purchases.":
-    "Scanned purchases are set to require parent approval.",
-  "Your parent reviews every purchase.":
-    "The daily limit is set to $0, so every purchase needs parent approval.",
-  "AI review is unavailable or its free-tier quota was reached. Your parent will review this purchase.":
-    "AI review is unavailable. Review this purchase manually.",
-  "Approved by your parent.": "A parent approved this purchase.",
-  "Your parent declined this purchase.": "A parent declined this purchase.",
-};
-
-function purchaseReason(reason: string | null, parent: boolean) {
-  return parent && reason && Object.hasOwn(parentDecisionReasons, reason)
-    ? parentDecisionReasons[reason]
-    : reason;
-}
-
 const missingReviewReason =
   "This purchase was sent for manual review without a recorded reason.";
-type AllowanceConfirmation = { amount: string; currency: string };
+export type AllowanceConfirmation = { amount: string; currency: string };
 
-function AllowanceApprovalDialog({
+export function AllowanceApprovalDialog({
   quote,
   reason,
   busy,
@@ -185,13 +167,12 @@ export function PurchaseScreen({
     initialPurchase || null,
   );
   const [phase, setPhase] = useState<"decision" | "payment" | null>(null);
-  const [allowanceConfirmation, setAllowanceConfirmation] =
-    useState<AllowanceConfirmation | null>(null);
   const submitting = useRef(false);
   const pending =
     current &&
-    ["REVIEWING", "WAITING_PARENT", "PROCESSING"].includes(current.status);
-  const invoice = useRemote<{ purchase: Purchase }>(
+    (isWaitingForParent(current.status) ||
+      ["REVIEWING", "PROCESSING"].includes(current.status));
+  const purchase = useRemote<{ purchase: Purchase }>(
     `/api/purchases/${id}`,
     pending ? 4000 : 0,
     true,
@@ -202,112 +183,57 @@ export function PurchaseScreen({
     return () => onBusyChange?.(false);
   }, [action.busy, onBusyChange]);
   const p = current;
+  const waitingForParent = p && isWaitingForParent(p.status);
+  const flaggedByAI =
+    waitingForParent && (p.aiDecision === "BLOCK" || p.status === "AI_BLOCKED");
   const statusTitle =
     p &&
-    (parent && p.status === "WAITING_PARENT"
-      ? "Needs parent approval"
+    (waitingForParent
+      ? parent
+        ? "Needs parent approval"
+        : titles.WAITING_PARENT
       : titles[p.status]);
   useEffect(() => {
-    if (invoice.data?.purchase.id === id && !submitting.current)
-      setCurrent(invoice.data.purchase);
-  }, [invoice.data, id]);
-  // Invoice creation is read-only until the child explicitly taps Pay.
-  function pay() {
+    if (purchase.data?.purchase.id === id && !submitting.current)
+      setCurrent(purchase.data.purchase);
+  }, [purchase.data, id]);
+  function requestPayment() {
     if (!p || submitting.current) return;
     submitting.current = true;
     void action.run(async () => {
+      const requesting = ["CREATED", "REVIEWING", "APPROVED"].includes(p.status);
+      setPhase(requesting ? "decision" : "payment");
       try {
-        let next = p;
-        if (["CREATED", "REVIEWING"].includes(next.status)) {
-          setPhase("decision");
-          next = (
-            await postApi<{ purchase: Purchase }>(
-              `/api/purchases/${id}/decision`,
-              {},
-            )
-          ).purchase;
-          setCurrent(next);
-        }
-        if (
-          (next.status === "APPROVED" && next.aiDecision === "APPROVE") ||
-          (next.status === "PAYMENT_FAILED" && next.aiDecision === "APPROVE") ||
-          next.status === "PROCESSING"
-        ) {
-          setPhase("payment");
-          next = (
-            await postApi<{ purchase: Purchase }>(
-              `/api/purchases/${id}/pay`,
-              {},
-            )
-          ).purchase;
-          setCurrent(next);
-        }
+        const result = await postApi<{ purchase: Purchase }>(
+          `/api/purchases/${id}/${requesting ? "decision" : "pay"}`,
+          {},
+        );
+        setCurrent(result.purchase);
       } finally {
         submitting.current = false;
         setPhase(null);
-        invoice.reload();
+        purchase.reload();
       }
-    });
-  }
-  function review(approve: boolean, confirmedAllowance?: string) {
-    void action.run(async () => {
-      const result = await postApi<
-        | { purchase: Purchase }
-        | { allowanceConfirmation: AllowanceConfirmation }
-      >(`/api/purchases/${id}/review`, {
-        action: approve ? "APPROVE" : "DECLINE",
-        confirmedAllowance,
-      });
-      if ("allowanceConfirmation" in result) {
-        setAllowanceConfirmation(result.allowanceConfirmation);
-        return;
-      }
-      setAllowanceConfirmation(null);
-      setCurrent(result.purchase);
-      invoice.reload();
     });
   }
   const content = (
     <>
-      <Status error={invoice.error} loading={!p && invoice.loading} />
-      {action.error && !action.busy && !allowanceConfirmation && (
+      <Status error={purchase.error} loading={!p && purchase.loading} />
+      {action.error && !action.busy && (
         <PurchaseErrorToast
           key={action.error}
           message={action.error}
           embedded={embedded}
         />
       )}
-      {allowanceConfirmation && (
-        <AllowanceApprovalDialog
-          quote={allowanceConfirmation}
-          reason={
-            purchaseReason(p?.decisionReason ?? null, true) ||
-            missingReviewReason
-          }
-          busy={action.busy}
-          error={action.error}
-          onApprove={() => review(true, allowanceConfirmation.amount)}
-          onDecline={() => review(false)}
-          onClose={() => {
-            setAllowanceConfirmation(null);
-            action.setError("");
-          }}
-        />
-      )}
       {p && (
         <>
           <Card>
-            <img
-              src={`/api/purchases/${p.id}/qr`}
-              alt="QR containing this demo invoice, items and prices"
-              className="mx-auto w-full max-w-[260px]"
-            />
-            <p className="text-center text-sm text-[#5e5e5e]">
-              Demo invoice QR · not a PayPal payment link
-            </p>
             <div className="flex justify-between">
               <div>
-                <h2 className="font-display text-2xl font-bold">INVOICE</h2>
+                <h2 className="font-display text-2xl font-bold">
+                  {p.status === "PAID" ? "Invoice" : "Bill"}
+                </h2>
                 <p className="mt-1 text-sm text-[#5e5e5e]">Pudding Sandbox</p>
               </div>
               <img
@@ -319,7 +245,7 @@ export function PurchaseScreen({
             <p className="break-all text-xs text-[#5e5e5e]">#{p.id}</p>
             <div className="flex justify-between text-sm">
               <span>Bill to {p.child?.name || (parent ? "child" : "you")}</span>
-              <time>{new Date(p.createdAt).toLocaleDateString()}</time>
+              <time>{new Date(p.paidAt || p.createdAt).toLocaleDateString()}</time>
             </div>
             <div className="border-y border-[#e8e8e8] py-3">
               <div className="mb-3 grid grid-cols-[1fr_32px_66px_70px] gap-1 text-xs text-[#5e5e5e]">
@@ -358,24 +284,30 @@ export function PurchaseScreen({
           </Card>
           <Card
             className={
-              p.status === "AI_BLOCKED" || p.status === "PAYMENT_FAILED"
+              flaggedByAI || p.status === "PAYMENT_FAILED"
                 ? "bg-[#fff0ee]"
                 : "bg-[#f3f3f3]"
             }
           >
             <p className="font-display text-xl font-bold">{statusTitle}</p>
-            {parent && p.status === "WAITING_PARENT" && (
+            {flaggedByAI ? (
               <p className="text-sm font-semibold">
-                Why this needs your approval
+                Flagged by AI for parent review
               </p>
+            ) : (
+              parent && waitingForParent && (
+                <p className="text-sm font-semibold">
+                  Why this needs your approval
+                </p>
+              )
             )}
             <p>
               {purchaseReason(p.decisionReason, parent) ||
-                (p.status === "WAITING_PARENT"
+                (waitingForParent
                   ? missingReviewReason
-                  : parent
-                    ? "Review the invoice items and total."
-                    : "Check your items and total, then tap Pay to review this purchase.")}
+                  : p.status === "CREATED" && !parent
+                    ? "Check your items and total before requesting payment."
+                    : "Review the items and total above.")}
             </p>
             {action.busy && (
               <div
@@ -386,7 +318,7 @@ export function PurchaseScreen({
                 <SpinnerIcon className="size-8 motion-reduce:animate-none" />
                 <p>
                   {phase === "decision"
-                    ? "Checking your purchase…"
+                    ? "Reviewing your payment request…"
                     : phase === "payment"
                       ? "Confirming your payment…"
                       : "Updating your purchase…"}
@@ -394,38 +326,18 @@ export function PurchaseScreen({
               </div>
             )}
           </Card>
-          {parent &&
-            ["WAITING_PARENT", "APPROVED", "PAYMENT_FAILED"].includes(
-              p.status,
-            ) && (
-              <>
-                <p className="text-sm text-[#5e5e5e]">
-                  Approval charges the primary parent’s saved PayPal Sandbox
-                  wallet. A top-up only changes your internal limit.
-                </p>
-                <Button busy={action.busy} onClick={() => review(true)}>
-                  Approve & pay {money(p.amount)}
-                </Button>
-                <Button
-                  busy={action.busy}
-                  secondary
-                  onClick={() => review(false)}
-                >
-                  Decline
-                </Button>
-                <ActionLink href={`/allowances?childId=${p.childId}`}>
-                  Manage this child's allowance
-                </ActionLink>
-                <ActionLink href="/topup">Increase family limit</ActionLink>
-              </>
-            )}
+          {parent && canReviewPurchase(p.status) && (
+            <ActionLink href={purchaseReviewPath(p.id)}>
+              Review purchase request
+            </ActionLink>
+          )}
           {p.status === "PROCESSING" && (
             <Button
               busy={action.busy}
               onClick={() =>
                 void action.run(async () => {
                   await postApi(`/api/purchases/${id}/pay`, {});
-                  invoice.reload();
+                  purchase.reload();
                 })
               }
             >
@@ -436,13 +348,15 @@ export function PurchaseScreen({
             (p.status === "CREATED" ||
               p.status === "REVIEWING" ||
               (["APPROVED", "PAYMENT_FAILED"].includes(p.status) &&
-                p.aiDecision === "APPROVE")) && (
-              <Button busy={action.busy} onClick={pay}>
+                p.aiDecision === "APPROVE" && !p.reviewedByUserId)) && (
+              <Button busy={action.busy} onClick={requestPayment}>
                 {p.status === "REVIEWING"
                   ? "Check review status"
                   : p.status === "PAYMENT_FAILED"
                     ? "Retry payment"
-                    : `Pay ${money(p.amount, p.currency)}`}
+                    : p.status === "APPROVED"
+                      ? "Continue payment"
+                      : "Request to Pay"}
               </Button>
             )}
           {parent && p.status === "PAYMENT_FAILED" && (
@@ -463,7 +377,7 @@ export function PurchaseScreen({
     content
   ) : (
     <AppScreen
-      title={statusTitle || "Your invoice"}
+      title={statusTitle || "Purchase details"}
       back={parent ? "/approvals" : "/home"}
       color={p?.status === "PAID" ? "#a0e1e1" : "#fff"}
     >
@@ -638,8 +552,12 @@ function PurchaseList({ approvals = false }: { approvals?: boolean }) {
               {purchaseReason(purchase.decisionReason, true) ||
                 missingReviewReason}
             </p>
-            <ActionLink href={`/purchases/${purchase.id}`}>
-              Review invoice
+            <ActionLink
+              href={canReviewPurchase(purchase.status)
+                ? purchaseReviewPath(purchase.id)
+                : `/purchases/${purchase.id}`}
+            >
+              {purchase.status === "PROCESSING" ? "Check payment" : "Review purchase request"}
             </ActionLink>
           </Card>
         ) : (

@@ -163,6 +163,9 @@ export function PreferencesScreen() {
             busy={action.busy}
             onClick={() =>
               void action.run(async () => {
+                if (prefs.pushEnabled && !remote.data?.preferences.pushEnabled) {
+                  await enableWebPush();
+                }
                 await putApi("/api/notifications/preferences", prefs);
                 if (!prefs.pushEnabled) await disableWebPush();
                 remote.reload();

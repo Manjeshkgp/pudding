@@ -9,8 +9,9 @@ import {
   handleRouteError,
   validateBody,
 } from "@/lib/api-response";
-import { createInvoice, serializePurchase } from "@/services/purchase.service";
+import { createBill, serializePurchase } from "@/services/purchase.service";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { parentReviewStatuses } from "@/lib/purchase-review";
 export async function GET(req: NextRequest) {
   try {
     const session = await requireAuth(req);
@@ -27,17 +28,10 @@ export async function GET(req: NextRequest) {
         ...(approvals
           ? {
               status: {
-                in: [
-                  "WAITING_PARENT",
-                  "APPROVED",
-                  "PAYMENT_FAILED",
-                  "PROCESSING",
-                ],
+                in: [...parentReviewStatuses, "PROCESSING"],
               },
             }
-          : status
-            ? { status }
-            : {}),
+          : { status: status || { not: "CREATED" } }),
         ...olderThan("createdAt", pageCursor(params)),
       },
       include: { child: { select: { name: true } } },
@@ -75,7 +69,7 @@ export async function POST(req: NextRequest) {
     return apiSuccess(
       {
         purchase: serializePurchase(
-          await createInvoice(session.sub, input.idempotencyKey),
+          await createBill(session.sub, input.idempotencyKey),
         ),
       },
       201,
