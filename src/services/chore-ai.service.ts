@@ -4,6 +4,7 @@ import { geminiJSON } from "@/lib/gemini";
 import { reviewChore } from "@/services/chore-review.service";
 import { ApiError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { notifyWithPush } from "@/services/notification.service";
 const resultSchema = z.object({
   verdict: z.enum(["SUPPORTED", "NOT_SUPPORTED", "NEEDS_PARENT_REVIEW"]),
   reason: z.string().trim().min(3).max(500),
@@ -144,6 +145,19 @@ Use a kind, specific, brief reason about visible evidence only. Never award mone
   });
   if (updated.count && result?.verdict === "SUPPORTED" && s.chore.familyId)
     await awardSupportedChore(id, s.chore.familyId, result.reason);
+  else if (updated.count && !localEvidenceCheck && result?.verdict === "NOT_SUPPORTED") {
+    try {
+      await notifyWithPush({
+        familyId: s.chore.familyId,
+        childId: s.childId,
+        type: "CHORE_AI_REVIEW",
+        title: "Your task needs parent review",
+        message: "AI couldn’t confirm the task from your photo. A parent can still review it.",
+      });
+    } catch (error) {
+      logger.warn("chore.notification_failed", { requestId: id }, error);
+    }
+  }
 }
 async function awardSupportedChore(
   id: string,

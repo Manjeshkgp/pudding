@@ -4,6 +4,8 @@ import { purchaseAccess } from "@/lib/purchase-access";
 import { hasParentPermission } from "@/lib/co-parent-permissions";
 import prisma from "@/lib/prisma";
 import { serializePurchase } from "@/services/purchase.service";
+import { canReviewPurchase } from "@/lib/purchase-review";
+import { oldestParentApproval } from "@/services/purchase-approval-queue.service";
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -13,7 +15,13 @@ export async function GET(
       req,
       (await context.params).id,
     );
-    if (parent) {
+    const canApprove = hasParentPermission(parent?.user, "canApproveSpending");
+    const queueHead =
+      canApprove && canReviewPurchase(purchase.status) &&
+      req.nextUrl.searchParams.get("view") === "review"
+        ? await oldestParentApproval(purchase.familyId)
+        : null;
+    if (parent && !canReviewPurchase(purchase.status) && purchase.status !== "PROCESSING") {
       await prisma.notification.updateMany({
         where: {
           familyId: purchase.familyId,
@@ -36,7 +44,8 @@ export async function GET(
       purchase: { ...serializePurchase(purchase), child: purchase.child },
       ...(parent && {
         review: {
-          canApprove: hasParentPermission(parent.user, "canApproveSpending"),
+          canApprove,
+          queueHead,
           pinSet: Boolean(parent.user.pinHash),
           availableSpend: wallet
             ? wallet.spendBalance

@@ -7,6 +7,7 @@ import "./globals.css";
 import MobileView from "@/components/mobile-view";
 import ClickFeedback from "@/components/click-feedback";
 import InstallAppPrompt from "@/components/install-app-prompt";
+import ParentApprovalQueue from "@/components/parent-approval-queue";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -47,6 +48,10 @@ export default async function RootLayout({
           </AuthNavigationBoundary>
           <ClickFeedback />
           <InstallAppPrompt />
+            {session?.subjectType === "USER" &&
+              session.navigation?.status === "COMPLETED" && (
+                <ParentApprovalQueue key={session.sub} />
+              )}
         </MobileView>
       </body>
     </html>
