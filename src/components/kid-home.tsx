@@ -13,7 +13,7 @@ const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), {
 
 // Kid home. Sample data only. Art goes in /public/kid-home (see the list in the reply).
 const SUMMARY = [
-  { icon: "/kid-home/wallet.svg", label: "Wallet available", amount: "$5.00" },
+  { icon: "/kid-home/wallet.svg", label: "In your wallet", amount: "$5.00" },
   { icon: "/kid-home/savings.svg", label: "Your savings", amount: "$5.00" },
   { icon: "/kid-home/quest.svg", label: "Your quest", amount: "$5.00" },
 ];
@@ -152,11 +152,18 @@ export default function KidHome() {
               Alex
             </h1>
           </div>
-          <div className="flex items-center gap-1 rounded-full bg-white px-3 py-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/kid-home/coin.svg" alt="" width={24} height={24} />
-            <span className="font-display text-[15px] font-semibold leading-[19px] tracking-[-0.15px] text-black">25</span>
-          </div>
+          <button type="button" className="flex items-center justify-center gap-1 rounded-full bg-white px-3 py-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 3.5C8.96 3.5 6.5 5.96 6.5 9V12.4L4.9 15.6C4.6 16.2 5 17 5.7 17H18.3C19 17 19.4 16.2 19.1 15.6L17.5 12.4V9C17.5 5.96 15.04 3.5 12 3.5Z"
+                stroke="#000"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path d="M9.8 19.5C10.2 20.3 11 20.8 12 20.8C13 20.8 13.8 20.3 14.2 19.5" stroke="#000" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span className="font-display text-[15px] font-semibold leading-[19px] tracking-[-0.15px] text-black">Inbox</span>
+          </button>
         </header>
 
         {/* Cards */}
@@ -167,17 +174,18 @@ export default function KidHome() {
             labelHeight={22}
             label={
               <p className="text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-[#a6a6a6]">
-                Total in your pudding
+                Amount left to spend this week
               </p>
             }
           >
             <div className="relative flex flex-col gap-2">
               <p aria-hidden className="invisible text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-[#a6a6a6]">
-                Total in your pudding
+                Amount left to spend this week
               </p>
-              <p className="font-display text-[52px] font-extrabold leading-[64px] tracking-[-0.78px] text-black">$34</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/kid-home/coin-stack.svg" alt="" width={48} height={48} className="absolute right-0 top-[30px]" />
+              <p className="flex items-baseline gap-1.5 font-display text-[52px] font-extrabold leading-[64px] tracking-[-0.78px] text-black">
+                $34
+                <span className="text-[32px] font-bold leading-10 tracking-[-0.64px]">/$50</span>
+              </p>
             </div>
             <ul className="flex flex-col">
               {SUMMARY.map((row, i) => (
