@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import TopupPill from "@/components/topup-pill";
@@ -9,8 +9,6 @@ import { CardIcon, ChevronRightIcon, RefreshIcon, SlidersIcon } from "@/componen
 import { AVATARS } from "@/components/avatar-sheet";
 
 // Parent home. Sample data only, nothing is loaded or sent.
-
-const TABS = ["Parents wallet", "Alex Silvestri", "Elena Silvestri"];
 
 const KIDS = [
   { name: "Alex Silvestri", banner: "blue" },
@@ -41,15 +39,46 @@ function HelpIcon({ className, mark, dot }: { className?: string; mark: string; 
   );
 }
 
-const ROWS = [
-  { label: "Wallet", action: "Activate", primary: true, Icon: CardIcon },
-  { label: "Savings", action: "Set up", primary: false, Icon: BankIcon },
-  { label: "Allowance", action: "Set up", primary: false, Icon: RefreshIcon },
-];
+// Before activation only Wallet is ready; after it, Wallet shows its balance
+// and Savings and Allowance can be set up.
+// Once Savings and Allowance are set up too, every row shows its balance.
+function rowsFor(active: boolean, done: string[]) {
+  return [
+    { label: "Wallet", action: active ? null : "Activate", primary: true, Icon: CardIcon },
+    { label: "Savings", action: done.includes("Savings") ? null : "Set up", primary: active, Icon: BankIcon },
+    { label: "Allowance", action: done.includes("Allowance") ? null : "Set up", primary: active, Icon: RefreshIcon },
+  ];
+}
 
 export default function ParentHome() {
-  const [tab, setTab] = useState(0);
-
+  // Kids whose wallet was activated in this visit (set when you finish the activate flow)
+  const [activated, setActivated] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      setActivated(JSON.parse(sessionStorage.getItem("pudding-activated") ?? "[]"));
+    } catch {}
+  }, []);
+  // "Alex:Savings" style entries for rows set up in this visit (sample only)
+  const [setUp, setSetUp] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      setSetUp(JSON.parse(sessionStorage.getItem("pudding-setup") ?? "[]"));
+    } catch {}
+  }, []);
+  function markSetUp(key: string) {
+    const next = setUp.includes(key) ? setUp : [...setUp, key];
+    setSetUp(next);
+    try {
+      sessionStorage.setItem("pudding-setup", JSON.stringify(next));
+    } catch {}
+  }
+  const doneFor = (first: string) =>
+    ["Savings", "Allowance"].filter((l) => setUp.includes(`${first}:${l}`));
+  // Third stage: a kid has everything set up, so the parent wallet is funded
+  const allSetUp = KIDS.some((k) => {
+    const f = k.name.split(" ")[0];
+    return activated.includes(f) && doneFor(f).length === 2;
+  });
   const router = useRouter();
   // Top-up opens by growing out of the tapped button until it fills the screen
   const [grow, setGrow] = useState<{
@@ -74,8 +103,8 @@ export default function ParentHome() {
   return (
     <main className="min-h-dvh bg-[#f3f3f3]">
       <div className="mx-auto w-full max-w-[520px] pb-[140px] pt-[max(16px,env(safe-area-inset-top))]">
-        {/* Header */}
-        <div className="flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Header: profile picture and Inbox */}
+        <div className="flex items-center justify-between px-4">
           <Link
             href="/account"
             aria-label="Account"
@@ -85,18 +114,18 @@ export default function ParentHome() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={AVATARS[0].src} alt="" className="size-full" />
           </Link>
-          {TABS.map((t, i) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(i)}
-              className={`shrink-0 whitespace-nowrap rounded-full px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] transition-colors ${
-                tab === i ? "bg-black text-white" : "bg-white text-black"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+          <button type="button" className="flex items-center justify-center gap-1 rounded-full bg-white px-3 py-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 3.5C8.96 3.5 6.5 5.96 6.5 9V12.4L4.9 15.6C4.6 16.2 5 17 5.7 17H18.3C19 17 19.4 16.2 19.1 15.6L17.5 12.4V9C17.5 5.96 15.04 3.5 12 3.5Z"
+                stroke="#000"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path d="M9.8 19.5C10.2 20.3 11 20.8 12 20.8C13 20.8 13.8 20.3 14.2 19.5" stroke="#000" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span className="font-display text-[15px] font-semibold leading-[19px] tracking-[-0.15px] text-black">Inbox</span>
+          </button>
         </div>
 
         <div className="flex flex-col gap-1 px-4 py-7">
@@ -104,21 +133,34 @@ export default function ParentHome() {
             Parent wallet
           </p>
           <p className="font-display text-[52px] font-bold leading-[64px] tracking-[-0.78px] text-black">
-            $0.00
+            {allSetUp ? "$1244.00" : "$0.00"}
           </p>
-          <Link
-            href="/topup"
-            onClick={(e) => launchTopup(e, "#f3f3f3")}
-            className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
-          >
-            Top-up your wallet now
-            <ChevronRightIcon className="size-5" />
-          </Link>
+          {allSetUp ? (
+            <button
+              type="button"
+              className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
+            >
+              Your next allowance is in 3 days
+              <ChevronRightIcon className="size-5" />
+            </button>
+          ) : (
+            <Link
+              href="/topup"
+              onClick={(e) => launchTopup(e, "#f3f3f3")}
+              className="flex items-start gap-1 self-start text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black"
+            >
+              Top-up your wallet now
+              <ChevronRightIcon className="size-5" />
+            </Link>
+          )}
         </div>
 
         {/* Kid cards */}
         <div className="flex flex-col gap-3 p-2">
-          {KIDS.map((k) => (
+          {KIDS.map((k) => {
+            const first = k.name.split(" ")[0];
+            const rows = rowsFor(activated.includes(first), doneFor(first));
+            return (
             <section key={k.name} className="overflow-clip rounded-[32px]">
               <div className="flex flex-col gap-3 bg-white py-6">
                 <div className="flex items-center gap-3 px-5">
@@ -147,13 +189,13 @@ export default function ParentHome() {
                 </div>
 
                 <div className="flex flex-col">
-                  {ROWS.map((r, i) => (
+                  {rows.map((r, i) => (
                     <div
                       key={r.label}
                       className={`flex items-center justify-between px-5 ${
                         i === 0
                           ? "border-y border-[#e8e8e8] p-5"
-                          : i < ROWS.length - 1
+                          : i < rows.length - 1
                             ? "border-b border-[#e8e8e8] p-5"
                             : "pt-5"
                       }`}
@@ -164,10 +206,14 @@ export default function ParentHome() {
                           {r.label}
                         </span>
                       </div>
+                      {r.action === null ? (
+                        <span className="text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-black">$0.00</span>
+                      ) : (
                       <button
                         type="button"
                         onClick={() => {
-                          if (r.label === "Wallet") router.push(`/activate/${k.name.split(" ")[0].toLowerCase()}`);
+                          if (r.label === "Wallet") router.push(`/activate/${first.toLowerCase()}`);
+                          else if (r.primary) markSetUp(`${first}:${r.label}`);
                         }}
                         className={`rounded-full px-4 py-3 text-[15px] font-medium leading-[19px] tracking-[-0.15px] transition-opacity active:opacity-80 ${
                           r.primary ? "bg-black text-white" : "bg-[#f3f3f3] text-[#a6a6a6]"
@@ -175,6 +221,7 @@ export default function ParentHome() {
                       >
                         {r.action}
                       </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -195,13 +242,14 @@ export default function ParentHome() {
                 </p>
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Top up */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex justify-center px-2.5 pb-[max(48px,env(safe-area-inset-bottom))] pt-4">
-        <TopupPill label="Transfer" />
+        <TopupPill label="Top up" />
       </div>
 
       {grow && (

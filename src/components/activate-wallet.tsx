@@ -382,7 +382,19 @@ export default function ActivateWallet({ name }: { name: string }) {
                   You can manage password in the kids setting.
                 </p>
               </div>
-              <BottomButton onClick={() => router.push("/family")}>Done</BottomButton>
+              <BottomButton
+                onClick={() => {
+                  // The parent home shows this kid's wallet as active (sample data only)
+                  try {
+                    const done: string[] = JSON.parse(sessionStorage.getItem("pudding-activated") ?? "[]");
+                    if (!done.includes(name)) done.push(name);
+                    sessionStorage.setItem("pudding-activated", JSON.stringify(done));
+                  } catch {}
+                  router.push("/family");
+                }}
+              >
+                Done
+              </BottomButton>
             </motion.div>
           )}
         </AnimatePresence>
