@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import BackButton from "@/components/back-button";
-import { AppScreen, Button, useAction } from "@/components/app-ui";
+import { AppScreen, Button } from "@/components/app-ui";
 import { PurchaseScreen } from "@/components/purchase-screens";
 import { type Purchase } from "@/lib/app-types";
 import { postApi } from "@/lib/client-api";
@@ -77,7 +77,7 @@ function PermissionSheet({ onAllow }: { onAllow: () => void }) {
                   Scan & pay with Pudding
                 </h2>
                 <p className="text-[17px] leading-[25px] tracking-[-0.17px]">
-                  Point your camera at a bill and tap Scan bill. Review the
+                  Point your camera at a bill and hold it steady. Review the
                   sample items and total before you request payment.
                 </p>
               </div>
@@ -113,6 +113,7 @@ function ScanCamera({
   const [attempt, setAttempt] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const autoScanned = useRef(false);
 
   useEffect(() => {
     try {
@@ -161,6 +162,26 @@ function ScanCamera({
     };
   }, [hasSeenPermission, attempt]);
 
+  useEffect(() => {
+    if (!live) return;
+    let timer: number | undefined;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      if (autoScanned.current || document.visibilityState !== "visible") return;
+      timer = window.setTimeout(() => {
+        if (!videoRef.current?.videoWidth || document.visibilityState !== "visible") return;
+        autoScanned.current = true;
+        onScan();
+      }, 2500);
+    };
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+    };
+  }, [live, onScan]);
+
   function allow() {
     try {
       localStorage.setItem(SEEN_KEY, "1");
@@ -188,6 +209,8 @@ function ScanCamera({
         muted
         autoPlay
         onPlaying={() => setLive(true)}
+        onPause={() => setLive(false)}
+        onWaiting={() => setLive(false)}
         aria-hidden="true"
         className={`absolute inset-0 size-full object-cover transition-opacity duration-300 ${live ? "opacity-100" : "opacity-0"}`}
       />
@@ -201,42 +224,36 @@ function ScanCamera({
         <div className="flex flex-1 items-center justify-center">
           <ScanFrame live={live} />
         </div>
-        <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-3 px-4 pb-[calc(max(56px,env(safe-area-inset-bottom))+88px)] pt-6">
+        <div className="relative z-10 mx-auto flex w-full max-w-sm flex-col items-center gap-3 px-4 pb-[max(32px,env(safe-area-inset-bottom))] pt-6">
           {(cameraError || scanError) && (
             <p role="alert" className="text-center text-sm text-white">
               {cameraError || scanError}
             </p>
           )}
-          <div className="flex w-full items-center gap-3">
-            {cameraError ? (
-              <Button secondary className="flex-1" onClick={() => setAttempt((value) => value + 1)}>
-                Retry camera
-              </Button>
-            ) : (
-              <Button
-                secondary
-                className="flex-1"
-                busy={scanning}
-                disabled={!live}
-                onClick={() => {
-                  if (videoRef.current?.videoWidth) onScan();
-                }}
-              >
-                Scan bill
-              </Button>
-            )}
-            {torchAvailable && live && (
-              <button
-                type="button"
-                aria-label="Flashlight"
-                aria-pressed={torch}
-                onClick={toggleTorch}
-                className={`flex size-12 shrink-0 items-center justify-center rounded-full transition-colors ${torch ? "bg-white/40" : "bg-white/20"}`}
-              >
-                <FlashlightIcon />
-              </button>
-            )}
-          </div>
+          {cameraError ? (
+            <Button secondary onClick={() => setAttempt((value) => value + 1)}>
+              Retry camera
+            </Button>
+          ) : scanError ? (
+            <Button secondary onClick={onScan}>Retry scan</Button>
+          ) : (
+            <p role="status" className="text-center text-sm text-white">
+              {scanning ? "Generating your bill…" : live ? "Hold steady to scan" : "Starting camera…"}
+            </p>
+          )}
+          <button
+            type="button"
+            aria-label="Flashlight"
+            aria-pressed={torch}
+            disabled={!torchAvailable || !live}
+            title={!torchAvailable ? "Flashlight unavailable on this device" : undefined}
+            onClick={toggleTorch}
+            className={`flex size-16 items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
+              torch ? "bg-white/40" : "bg-white/20"
+            }`}
+          >
+            <FlashlightIcon />
+          </button>
         </div>
       </div>
       <AnimatePresence>
@@ -247,7 +264,9 @@ function ScanCamera({
 }
 
 export default function ScanScreen() {
-  const action = useAction();
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const scanInFlight = useRef(false);
   const requestKey = useRef<string | null>(null);
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [purchaseBusy, setPurchaseBusy] = useState(false);
@@ -256,18 +275,27 @@ export default function ScanScreen() {
     if (purchase) window.scrollTo({ top: 0, behavior: "auto" });
   }, [purchase]);
 
-  function scan() {
-    void action.run(async () => {
+  const scan = useCallback(async () => {
+    if (scanInFlight.current) return;
+    scanInFlight.current = true;
+    setScanBusy(true);
+    setScanError("");
+    try {
       requestKey.current ||= crypto.randomUUID();
       const result = await postApi<{ purchase: Purchase }>("/api/purchases", {
         idempotencyKey: requestKey.current,
       });
       setPurchase(result.purchase);
-    });
-  }
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "Couldn’t generate a bill.");
+    } finally {
+      scanInFlight.current = false;
+      setScanBusy(false);
+    }
+  }, []);
 
   if (!purchase)
-    return <ScanCamera onScan={scan} scanning={action.busy} scanError={action.error} />;
+    return <ScanCamera onScan={scan} scanning={scanBusy} scanError={scanError} />;
 
   return (
     <AppScreen title="Scanned bill" back="/home" role="CHILD" color="#ffc091">

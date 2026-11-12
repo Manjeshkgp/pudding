@@ -18,11 +18,20 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
   if (payload.debug) console.info("[Pudding push] Received", payload.debug);
+  if (/^\/approve\/[A-Za-z0-9_-]+$/.test(payload.data?.href || "")) {
+    event.waitUntil(
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+        for (const client of windows) {
+          client.postMessage({ type: "pudding-purchase-approval" });
+        }
+      }),
+    );
+  }
   event.waitUntil(
     self.registration
       .showNotification(payload.title || "Pudding", {
         body: payload.body || "You have a new update.",
-        icon: "/images/pudding-app-192.png",
+        icon: "/images/pudding-app-192.png?v=2",
         data: payload.data || {},
       })
       .then(() => {

@@ -9,17 +9,11 @@ import {
 } from "@/lib/api-response";
 import { requireAuth, requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { avatarIds } from "@/lib/avatars";
 
 const updateParentProfileSchema = z.object({
   name: z.string().trim().min(2).max(100),
-  avatar: z.enum([
-    "avatar-1",
-    "avatar-2",
-    "avatar-3",
-    "avatar-4",
-    "avatar-5",
-    "avatar-6",
-  ]),
+  avatar: z.enum(avatarIds),
 });
 
 export async function GET(req: NextRequest) {

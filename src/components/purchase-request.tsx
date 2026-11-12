@@ -60,7 +60,7 @@ function KidChip({
         <img
           src={avatar.src}
           alt=""
-          className="absolute left-[-2.8px] top-[2.5px] size-7 max-w-none rotate-[16deg]"
+          className="size-full"
         />
       </span>
       <span className="text-[15px] font-medium leading-[19px] tracking-[-0.15px] text-black">
@@ -156,11 +156,14 @@ export default function PurchaseRequest({ id }: { id: string }) {
   const action = useAction();
   const remote = useRemote<{
     purchase: Purchase;
-    review: PurchaseReviewDetails;
-  }>(`/api/purchases/${id}`, 0, true);
+    review: PurchaseReviewDetails & {
+      queueHead?: { id: string; status: string } | null;
+    };
+  }>(`/api/purchases/${id}?view=review`, 12000, true);
   const purchase = remote.data?.purchase;
   const review = remote.data?.review;
-  const reviewable = Boolean(purchase && canReviewPurchase(purchase.status));
+  const earlier = review?.queueHead?.id !== id ? review?.queueHead : null;
+  const reviewable = Boolean(purchase && canReviewPurchase(purchase.status) && !earlier);
   const modal = useRef<HTMLDialogElement>(null);
 
   function leave() {
@@ -208,8 +211,12 @@ export default function PurchaseRequest({ id }: { id: string }) {
   }, [step, reviewable]);
 
   useEffect(() => {
-    if (purchase && !reviewable) router.replace(`/purchases/${id}`);
-  }, [id, purchase, reviewable, router]);
+    if (earlier) {
+      router.replace(earlier.status === "PROCESSING"
+        ? `/purchases/${earlier.id}`
+        : purchaseReviewPath(earlier.id));
+    } else if (purchase && !reviewable) router.replace(`/purchases/${id}`);
+  }, [earlier, id, purchase, reviewable, router]);
 
   function onKey(key: string) {
     if (action.busy || quote) return;

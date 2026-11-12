@@ -14,7 +14,7 @@ const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), {
   ssr: false,
 });
 
-const CARD_TOP = 590; // where the first card starts on the page
+const CARD_TOP = 526; // where the first card starts on the page
 const CARD1_H = 436;
 
 const label15 = "text-[15px] font-medium leading-[19px] tracking-[-0.15px]";
@@ -37,30 +37,28 @@ export default function KidHome() {
     AVATARS[0];
   const goals =
     data?.savingsGoals.reduce((n, g) => n + Number(g.currentAmount), 0) || 0;
-  const total =
-    Number(data?.wallet?.spendBalance || 0) +
-    Number(data?.wallet?.saveBalance || 0) +
-    goals;
+  const currency = data?.profile.currency;
+  const available = Math.max(0, Number(data?.wallet?.spendBalance || 0) -
+    Number(data?.wallet?.purchaseReservedBalance || 0));
+  const weekly = data?.weeklySpending;
+  const spendLabel = weekly ? "Weekly limit remaining" : "Available to spend";
   const SUMMARY = [
     {
       icon: "/kid-home/wallet.svg",
-      label: "Spend available",
-      amount: money(
-        Number(data?.wallet?.spendBalance || 0) -
-          Number(data?.wallet?.purchaseReservedBalance || 0),
-      ),
+      label: "In your wallet",
+      amount: money(available, currency),
       href: "/money",
     },
     {
       icon: "/kid-home/savings.svg",
       label: "Your savings",
-      amount: money(data?.wallet?.saveBalance),
+      amount: money(data?.wallet?.saveBalance, currency),
       href: "/savings",
     },
     {
       icon: "/kid-home/quest.svg",
       label: "Your quests",
-      amount: money(goals),
+      amount: money(goals, currency),
       href: "/quest",
     },
   ];
@@ -173,7 +171,7 @@ export default function KidHome() {
         </div>
 
         {/* Header */}
-        <header className="fixed inset-x-0 top-0 z-0 mx-auto flex w-full max-w-[520px] items-center justify-between bg-gradient-to-b from-black/40 to-transparent px-4 pb-[60px] pt-[max(24px,env(safe-area-inset-top))]">
+        <header className="fixed inset-x-0 top-0 z-20 mx-auto flex w-full max-w-[520px] items-center justify-between bg-gradient-to-b from-black/40 to-transparent px-4 pb-[60px] pt-[max(24px,env(safe-area-inset-top))]">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -185,13 +183,18 @@ export default function KidHome() {
               {data?.profile.name.split(" ")[0] || "Your pudding"}
             </h1>
           </div>
-          <div className="flex items-center gap-1 rounded-full bg-white px-3 py-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/kid-home/coin.svg" alt="" width={24} height={24} />
-            <span className="font-display text-[15px] font-semibold leading-[19px] tracking-[-0.15px] text-black">
-              {data?.profile.xp || 0} XP
-            </span>
-          </div>
+          <Link href="/inbox" className="flex items-center justify-center gap-1 rounded-full bg-white px-3 py-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 3.5C8.96 3.5 6.5 5.96 6.5 9V12.4L4.9 15.6C4.6 16.2 5 17 5.7 17H18.3C19 17 19.4 16.2 19.1 15.6L17.5 12.4V9C17.5 5.96 15.04 3.5 12 3.5Z"
+                stroke="#000"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path d="M9.8 19.5C10.2 20.3 11 20.8 12 20.8C13 20.8 13.8 20.3 14.2 19.5" stroke="#000" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span className="font-display text-[15px] font-semibold leading-[19px] tracking-[-0.15px] text-black">Inbox</span>
+          </Link>
         </header>
 
         {/* Cards */}
@@ -200,27 +203,13 @@ export default function KidHome() {
             error={remote.error}
             loading={remote.loading}
           />
-          <div className="grid grid-cols-2 gap-3">
-            <Link
-              href="/scan"
-              className="rounded-full bg-black px-5 py-4 text-center font-semibold text-white"
-            >
-              Scan & pay
-            </Link>
-            <Link
-              href="/inbox"
-              className="rounded-full bg-white px-5 py-4 text-center font-semibold"
-            >
-              Inbox
-            </Link>
-          </div>
           <PinCard
             top={CARD_TOP}
             height={CARD1_H}
             labelHeight={22}
             label={
               <p className="text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-[#a6a6a6]">
-                Total in your pudding
+                {spendLabel}
               </p>
             }
           >
@@ -229,19 +218,16 @@ export default function KidHome() {
                 aria-hidden
                 className="invisible text-[17px] font-medium leading-[22px] tracking-[-0.17px] text-[#a6a6a6]"
               >
-                Total in your pudding
+                {spendLabel}
               </p>
-              <p className="font-display text-[52px] font-extrabold leading-[64px] tracking-[-0.78px] text-black">
-                {money(total)}
+              <p className="flex flex-wrap items-baseline gap-1.5 font-display text-[clamp(32px,10vw,52px)] font-extrabold leading-tight tracking-[-0.78px] text-black">
+                {data ? money(weekly?.remaining ?? available, currency) : "—"}
+                {weekly && (
+                  <span className="text-[clamp(20px,6vw,32px)] font-bold leading-10">
+                    / {money(weekly.limit, currency)}
+                  </span>
+                )}
               </p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/kid-home/coin-stack.svg"
-                alt=""
-                width={48}
-                height={48}
-                className="absolute right-0 top-[30px]"
-              />
             </div>
             <ul className="flex flex-col">
               {SUMMARY.map((row, i) => (

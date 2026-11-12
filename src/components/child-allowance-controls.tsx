@@ -14,7 +14,13 @@ import { Kid, Me, money } from "@/lib/app-types";
 import { hasParentPermission } from "@/lib/co-parent-permissions";
 import { patchApi, postApi, putApi } from "@/lib/client-api";
 import Switch from "@/components/switch";
-import { frequencyLabels, taskFrequencies } from "@/lib/chore-period";
+import { frequencyLabels } from "@/lib/chore-period";
+import {
+  isScheduledAllowanceFrequency,
+  scheduledAllowanceFrequencies,
+} from "@/lib/allowance-frequencies";
+
+const allocationFrequencies = ["ONCE", ...scheduledAllowanceFrequencies] as const;
 
 type Schedule = {
   id: string;
@@ -47,7 +53,7 @@ export default function ChildAllowanceControls({
     [age, setAge] = useState(true),
     [allocation, setAllocation] = useState("");
   const [frequency, setFrequency] =
-    useState<(typeof taskFrequencies)[number]>("ONCE");
+    useState<(typeof allocationFrequencies)[number]>("ONCE");
   const key = useRef<string | null>(null);
   const canControl = hasParentPermission(user, "canManageSpendingRules"),
     canAllocate = hasParentPermission(user, "canManageBudget"),
@@ -61,7 +67,7 @@ export default function ChildAllowanceControls({
   const selectedFrequency = !canSchedule
     ? "ONCE"
     : !canAllocate && frequency === "ONCE"
-      ? "DAILY"
+      ? "WEEKLY"
       : frequency;
   useEffect(() => {
     if (rules.data) {
@@ -111,11 +117,11 @@ export default function ChildAllowanceControls({
                   label="Frequency"
                   value={selectedFrequency}
                   onChange={(value) => {
-                    setFrequency(value as (typeof taskFrequencies)[number]);
+                    setFrequency(value as (typeof allocationFrequencies)[number]);
                     key.current = null;
                   }}
                 >
-                  {taskFrequencies
+                  {allocationFrequencies
                     .filter((value) =>
                       value === "ONCE" ? canAllocate : canSchedule,
                     )
@@ -189,9 +195,11 @@ export default function ChildAllowanceControls({
                       ] || "Monthly"}
                     </p>
                     <p className="text-sm text-[#5e5e5e]">
-                      {schedule.status === "PAUSED"
-                        ? "Paused"
-                        : `Next addition: ${new Date(schedule.nextRunAt).toLocaleString()}`}
+                      {!isScheduledAllowanceFrequency(schedule.frequency)
+                        ? "Paused. Choose weekly or monthly to replace this schedule."
+                        : schedule.status === "PAUSED"
+                          ? "Paused"
+                          : `Next addition: ${new Date(schedule.nextRunAt).toLocaleString()}`}
                     </p>
                     {canSchedule && (
                       <Button

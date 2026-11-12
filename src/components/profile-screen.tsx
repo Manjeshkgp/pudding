@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import BackButton from "@/components/back-button";
 import HelpLink from "@/components/help-link";
 import { useEffect, useRef, useState } from "react";
@@ -119,13 +118,7 @@ export default function ProfileScreen({
             {returnTo === "/account" ? (
               <BackButton fallback="/account" className={circle} />
             ) : (
-              <Link
-                href="/login"
-                aria-label="Save and exit signup"
-                className={circle}
-              >
-                Exit
-              </Link>
+              <span className="size-11" />
             )}
             <HelpLink
               aria-label="Help"

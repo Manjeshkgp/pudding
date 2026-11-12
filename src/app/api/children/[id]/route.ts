@@ -11,6 +11,7 @@ import {
 } from "@/lib/api-response";
 import { requireChildOrFamilyParent, requireParent } from "@/lib/auth-guard";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
+import { avatarIds } from "@/lib/avatars";
 import {
   calculateChildAge,
   childUsernameSchema,
@@ -30,7 +31,7 @@ const updateChildSchema = z.object({
       "Enter a valid date of birth",
     )
     .optional(),
-  avatar: z.string().trim().max(100).optional(),
+  avatar: z.enum(avatarIds).optional(),
   theme: z.string().trim().max(50).optional(),
   isFrozen: z.boolean().optional(),
   quietHoursStart: z

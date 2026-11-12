@@ -14,6 +14,7 @@ import { Me } from "@/lib/app-types";
 import { patchApi } from "@/lib/client-api";
 import { taskSubmissionPath } from "@/lib/navigation-policy";
 import { purchaseReviewPath } from "@/lib/purchase-review";
+import { enableWebPush } from "@/lib/web-push-client";
 export default function InboxScreen() {
   const me = useRemote<Me>("/api/auth/me");
   const remote = usePagedList<{
@@ -30,12 +31,28 @@ export default function InboxScreen() {
     } | null;
   }>("/api/notifications");
   const action = useAction();
+  const push = useAction();
   return (
     <AppScreen
       title="Your inbox"
       back={me.data?.subjectType === "CHILD" ? "/home" : "/family"}
     >
       <Status loading={remote.loading} error={remote.error || action.error} />
+      {me.data?.subjectType === "CHILD" && (
+        <>
+          <Button
+            secondary
+            busy={push.busy}
+            onClick={() => void push.run(
+              () => enableWebPush(),
+              "Browser notifications are enabled on this device.",
+            )}
+          >
+            Enable browser notifications
+          </Button>
+          <Status error={push.error} notice={push.notice} />
+        </>
+      )}
       {Boolean(remote.unreadCount) && (
         <Button
           secondary

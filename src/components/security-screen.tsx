@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import HelpLink from "@/components/help-link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -136,13 +135,7 @@ export default function SecurityScreen({ step = 1 }: { step?: 1 | 2 }) {
         {/* Header: while typing, the big heading shrinks up into the top row */}
         <div className="px-4 pt-[max(20px,env(safe-area-inset-top))]">
           <div className="flex h-11 items-center justify-between">
-            <Link
-              href="/login"
-              aria-label="Save and exit signup"
-              className={circle}
-            >
-              Exit
-            </Link>
+            <span className="size-11" />
             <HelpLink
               aria-label="Help"
               className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${

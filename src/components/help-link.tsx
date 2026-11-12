@@ -20,6 +20,7 @@ export default function HelpLink({
   return (
     <Link
       href="/help"
+      prefetch={false}
       className={className}
       onClick={() => {
         try {

@@ -39,15 +39,12 @@ interface PayPalUserInfoResponse {
 export async function GET(req: NextRequest) {
   const wantsJson = req.nextUrl.searchParams.get("format") === "json" ||
     req.headers.get("accept")?.includes("application/json");
-  // Use the runtime server URL, falling back to the origin PayPal called.
-  // NEXT_PUBLIC_* values can be frozen into the build and point OAuth users
-  // at an obsolete host such as localhost.
-  const appUrl = process.env.APP_BASE_URL || req.nextUrl.origin;
   let returnPath = "/paypal";
   function browserResult(result: "connected" | "cancelled" | "error") {
-    const url = new URL(returnPath, appUrl);
-    url.searchParams.set("paypal_oauth", result);
-    const response = NextResponse.redirect(url);
+    const response = new NextResponse(null, {
+      status: 307,
+      headers: { Location: `${returnPath}?paypal_oauth=${result}` },
+    });
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   }
@@ -341,7 +338,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     if (wantsJson) return handleRouteError(error);
     if (error instanceof ApiError && error.code === "PAYPAL_TRIAL_REQUIRED") {
-      return NextResponse.redirect(new URL("/api/auth/navigation/refresh?returnTo=%2Fonboarding", appUrl));
+      return new NextResponse(null, { status: 307, headers: { Location: "/api/auth/navigation/refresh?returnTo=%2Fonboarding" } });
     }
     logger.warn("paypal.oauth.return_failed", {
       provider: "paypal",

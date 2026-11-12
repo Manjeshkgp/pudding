@@ -80,6 +80,7 @@ export type ChildHome = {
     currency: string;
   };
   wallet: Wallet | null;
+  weeklySpending: { limit: string; remaining: string } | null;
   chores: Chore[];
   savingsGoals: {
     id: string;

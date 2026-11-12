@@ -13,6 +13,11 @@ import {
 import { logger } from "@/lib/logger";
 import { dispatchNotification } from "@/services/notification.service";
 import { isWaitingForParent, purchaseReviewPath } from "@/lib/purchase-review";
+import { purchaseUsage, startOfPurchaseWeek } from "@/lib/purchase-usage";
+import {
+  markPurchaseNotificationsReviewed,
+  requireOldestParentApproval,
+} from "@/services/purchase-approval-queue.service";
 
 export const catalog = [
   { name: "Notebook and pencils", category: "School", unitPrice: "6.50" },
@@ -51,7 +56,10 @@ export async function notifyPurchase(
       data: { purchaseId: p.id, href: `/purchases/${p.id}` },
     };
     const childNotification = { ...common, childId: p.childId };
-    if (p.reviewedByUserId && ["PAID", "DECLINED"].includes(p.status)) {
+    if (
+      p.status === "APPROVED" ||
+      (p.reviewedByUserId && ["PAID", "DECLINED", "PROCESSING"].includes(p.status))
+    ) {
       await dispatchNotification(childNotification);
       return;
     }
@@ -65,7 +73,7 @@ export async function notifyPurchase(
         dispatchNotification({
           ...common,
           userId: parent.id,
-          ...(p.status === "WAITING_PARENT"
+          ...(isWaitingForParent(p.status) || p.status === "PAYMENT_FAILED"
             ? { data: { purchaseId: p.id, href: purchaseReviewPath(p.id) } }
             : {}),
           ...(p.status === "PAID"
@@ -203,13 +211,15 @@ export async function decidePurchase(id: string) {
     },
   });
   const updated = await prisma.purchase.findUniqueOrThrow({ where: { id } });
-  if (saved.count && updated.status === status && status !== "APPROVED")
+  if (saved.count && updated.status === status)
     await notifyPurchase(
       updated,
-      decision.decision === "BLOCK"
+      status === "APPROVED"
+        ? "Purchase approved by AI"
+        : decision.decision === "BLOCK"
         ? "AI flagged a purchase for review"
         : "Purchase needs approval",
-      decision.reason,
+      status === "APPROVED" ? "Your Sandbox payment is being prepared." : decision.reason,
     );
   return updated;
 }
@@ -249,6 +259,8 @@ export async function payPurchase(
     await tx.$queryRaw`SELECT "id" FROM "Purchase" WHERE "id" = ${id} FOR UPDATE`;
     const p = await tx.purchase.findUniqueOrThrow({ where: { id } });
     if (p.status === "PAID") return { p, send: false, vaultId: "" };
+    if (parentId && approval && p.status !== "PROCESSING")
+      await requireOldestParentApproval(p.familyId, id, tx);
     if (
       p.status === "PROCESSING" &&
       p.processingAt &&
@@ -438,6 +450,7 @@ export async function payPurchase(
         data: { purchaseReservedBalance: { increment: p.amount } },
       });
       if (parentId && approval) {
+        await markPurchaseNotificationsReviewed(tx, p.familyId, id);
         await tx.auditLog.create({
           data: {
             familyId: p.familyId,
@@ -475,7 +488,12 @@ export async function payPurchase(
           : {}),
       },
     });
-    return { p: next, send: true, vaultId: payer.paypalVaultId };
+    return {
+      p: next,
+      send: true,
+      vaultId: payer.paypalVaultId,
+      newlyApprovedByParent: Boolean(parentId && approval && !p.reviewedByUserId),
+    };
   });
   if (!claim.send) {
     if (claim.p.status === "WAITING_PARENT")
@@ -487,6 +505,16 @@ export async function payPurchase(
     return claim.p;
   }
   const p = claim.p;
+  async function pendingPayment(reason: string) {
+    const pending = await prisma.purchase.updateMany({
+      where: { id, status: "PROCESSING", paymentAttempt: p.paymentAttempt },
+      data: { decisionReason: reason },
+    });
+    const current = await prisma.purchase.findUniqueOrThrow({ where: { id } });
+    if (pending.count && current.status === "PROCESSING" && claim.newlyApprovedByParent)
+      await notifyPurchase(current, "Your parent approved the purchase", reason);
+    return current;
+  }
   let orderId = p.paypalOrderId;
   let order: PayPalOrderResponse | null = null;
   try {
@@ -537,13 +565,9 @@ export async function payPurchase(
         "PayPal declined this payment. Your allowance was not deducted.",
       );
     if (!order)
-      return prisma.purchase.update({
-        where: { id },
-        data: {
-          decisionReason:
-            "Waiting for PayPal confirmation. Retry confirmation to safely check this same payment.",
-        },
-      });
+      return pendingPayment(
+        "Waiting for PayPal confirmation. Retry confirmation to safely check this same payment.",
+      );
   }
   const capture = completedCapture(order!, p);
   if (!capture) {
@@ -558,13 +582,9 @@ export async function payPurchase(
         p,
         "PayPal requires a new wallet authorization or declined this payment. Ask your parent to reconnect PayPal.",
       );
-    return prisma.purchase.update({
-      where: { id },
-      data: {
-        decisionReason:
-          "PayPal has not confirmed this payment yet. No completed spending has been recorded.",
-      },
-    });
+    return pendingPayment(
+      "PayPal has not confirmed this payment yet. No completed spending has been recorded.",
+    );
   }
   return finishPaidPurchase(p, order!, p.reviewedByUserId ?? parentId);
 }
@@ -717,8 +737,7 @@ async function purchaseReviewReason(
   if (daily.equals(0)) return "Your parent reviews every purchase.";
   const day = new Date();
   day.setUTCHours(0, 0, 0, 0);
-  const week = new Date(day);
-  week.setUTCDate(week.getUTCDate() - ((week.getUTCDay() + 6) % 7));
+  const week = startOfPurchaseWeek(day);
   const month = new Date(day);
   month.setUTCDate(1);
   for (const [label, limit, start] of [
@@ -727,18 +746,8 @@ async function purchaseReviewReason(
     ["monthly", rule?.monthlyLimit, month],
   ] as const) {
     if (!limit) continue;
-    const used = await db.purchase.aggregate({
-      where: {
-        childId: p.childId,
-        id: { not: p.id },
-        OR: [
-          { status: "PAID", paidAt: { gte: start } },
-          { status: "PROCESSING" },
-        ],
-      },
-      _sum: { amount: true },
-    });
-    if ((used._sum.amount || new Prisma.Decimal(0)).plus(p.amount).gt(limit))
+    const used = await purchaseUsage(db, p.childId, start, p.id);
+    if (used.plus(p.amount).gt(limit))
       return `This purchase would exceed your ${label} limit. Parent approval is required.`;
   }
   return null;

@@ -17,15 +17,6 @@ type PayPalPaymentToken = {
   };
 };
 
-function appUrl(path: string) {
-  return new URL(
-    path,
-    process.env.APP_BASE_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000",
-  );
-}
-
 async function walletIsSaved(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -36,9 +27,9 @@ async function walletIsSaved(userId: string) {
 
 function walletConnected(signedIn: boolean) {
   // Continue refreshes the signed navigation state after the confirmation.
-  const response = NextResponse.redirect(
-    appUrl(signedIn ? "/paypal?paypal_vault=connected" : "/login"),
-  );
+  const response = new NextResponse(null, { status: 307, headers: {
+    Location: signedIn ? "/paypal?paypal_vault=connected" : "/login",
+  } });
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
@@ -75,7 +66,7 @@ export async function GET(req: NextRequest) {
       // browser return can recover from the authenticated parent's wallet.
       if (signedInParent && await walletIsSaved(signedInParent))
         return walletConnected(true);
-      if (!session) return NextResponse.redirect(appUrl("/login"));
+      if (!session) return new NextResponse(null, { status: 307, headers: { Location: "/login" } });
       throw new ApiError(
         404,
         "No pending PayPal wallet setup matches this approval",
@@ -208,8 +199,8 @@ export async function GET(req: NextRequest) {
         error,
       );
     }
-    return NextResponse.redirect(
-      appUrl(`/paypal?paypal_vault=error&code=${encodeURIComponent(code)}`),
-    );
+    return new NextResponse(null, { status: 307, headers: {
+      Location: `/paypal?paypal_vault=error&code=${encodeURIComponent(code)}`,
+    } });
   }
 }

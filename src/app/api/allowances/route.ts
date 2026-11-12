@@ -13,6 +13,7 @@ import { computeNextAllowanceRunAt } from "@/jobs/allowance.job";
 import { getRequestMeta, writeAuditLog } from "@/lib/audit";
 import { chorePeriod } from "@/lib/chore-period";
 import { creditScheduledAllowance } from "@/services/scheduled-allowance.service";
+import { scheduledAllowanceFrequencies } from "@/lib/allowance-frequencies";
 
 const createAllowanceSchema = z.object({
   childId: z.string().trim().min(1, "childId is required"),
@@ -22,7 +23,7 @@ const createAllowanceSchema = z.object({
     .multipleOf(0.01)
     .max(5000),
   frequency: z
-    .enum(["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "CUSTOM_DAY"])
+    .enum(scheduledAllowanceFrequencies)
     .default("WEEKLY"),
   dayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   dayOfMonth: z.number().int().min(1).max(28).optional().nullable(),

@@ -6,6 +6,10 @@ import { hasParentPermission } from "@/lib/co-parent-permissions";
 import { verifyParentPin } from "@/lib/parent-pin";
 import { canReviewPurchase } from "@/lib/purchase-review";
 import {
+  markPurchaseNotificationsReviewed,
+  requireOldestParentApproval,
+} from "@/services/purchase-approval-queue.service";
+import {
   ApiError,
   apiSuccess,
   handleRouteError,
@@ -71,6 +75,7 @@ export async function POST(
       }
     }
     const p = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Family" WHERE "id" = ${family.id} FOR UPDATE`;
       await tx.$queryRaw`SELECT "id" FROM "Purchase" WHERE "id" = ${id} FOR UPDATE`;
       const purchase = await tx.purchase.findUnique({ where: { id } });
       if (!purchase || purchase.familyId !== family.id)
@@ -80,6 +85,7 @@ export async function POST(
           409,
           "This purchase is not waiting for a parent decision.",
         );
+      await requireOldestParentApproval(family.id, id, tx);
       const updated = await tx.purchase.update({
         where: { id },
         data: {
@@ -88,6 +94,7 @@ export async function POST(
           decisionReason: input.reason || "Your parent declined this purchase.",
         },
       });
+      await markPurchaseNotificationsReviewed(tx, family.id, id);
       await tx.auditLog.create({
         data: {
           familyId: family.id,

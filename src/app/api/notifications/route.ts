@@ -51,12 +51,16 @@ export async function GET(req: NextRequest) {
             cursor,
           );
 
-    // Opening the inbox marks the page the user actually received as read.
-    // This also makes push deep-links consistent: opening the purchase review
-    // screen marks its related parent inbox item read in the purchase GET API.
+    // Purchase approval alerts stay unread until a parent makes a decision.
     const visibleNotifications = notifications.slice(0, pageSize);
     const unreadIds = visibleNotifications
-      .filter((notification) => !notification.isRead)
+      .filter((notification) => {
+        if (notification.isRead) return false;
+        if (session.subjectType === "CHILD" || notification.type !== "PURCHASE_UPDATE")
+          return true;
+        const data = notification.metadata as { href?: string } | null;
+        return !data?.href?.startsWith("/approve/");
+      })
       .map((notification) => notification.id);
     if (unreadIds.length) {
       await prisma.notification.updateMany({

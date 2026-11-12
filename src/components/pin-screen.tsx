@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import SetupExitButton from "@/components/setup-exit-button";
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -109,9 +108,7 @@ export default function PinScreen() {
   return (
     <main className="min-h-dvh bg-white">
       <div className="mx-auto flex h-dvh w-full max-w-[520px] flex-col overflow-hidden bg-white">
-        <div className="flex items-center justify-end px-4 pb-2 pt-[max(20px,env(safe-area-inset-top))]">
-          <SetupExitButton />
-        </div>
+        <div className="pt-[max(20px,env(safe-area-inset-top))]" />
 
         <AnimatePresence>
           {toast !== null && (

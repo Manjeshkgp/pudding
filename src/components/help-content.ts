@@ -100,7 +100,7 @@ export const TOPICS: Topic[] = [
       art("How payments work", [
         [
           "Scan a bill",
-          "The child points the camera at a bill and taps Scan bill. The demo shows items and prices from its sample catalog on the same screen.",
+          "The child points the camera at a bill and holds it steady. After a short pause, the demo shows items and prices from its sample catalog on the same screen.",
         ],
         [
           "Review",
@@ -242,7 +242,7 @@ export const TOPICS: Topic[] = [
         ],
         [
           "Capture anything",
-          "The camera is used to simulate scanning. Tapping Scan bill generates a sample bill from the demo catalog.",
+          "Once the camera is live, Pudding automatically generates a sample bill from the demo catalog.",
         ],
         [
           "Try again",
